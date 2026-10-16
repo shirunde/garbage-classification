@@ -1,0 +1,2 @@
+# 框架本体使用 Python 标准库。
+# 板端联调时再安装课程环境里的 ais_bench、opencv、ROS2 依赖。
