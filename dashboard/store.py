@@ -1,11 +1,21 @@
-"""看板内存数据。写入后可立刻被四个页面读到。"""
+"""看板数据。页面和分拣会话都走这里，事件同时追加到日志。"""
+
+import json
 
 from shared.schemas import CLASS_LABELS, Reason, SortEvent
 
 
 class EventStore:
-    def __init__(self):
+    def __init__(self, log_path=None):
         self.events = []
+        self.pending_cls = None
+        self.log_path = log_path
+
+    def show_pending(self, cls):
+        self.pending_cls = cls
+
+    def publish(self, event):
+        return self.add(event)
 
     def add(self, event):
         if isinstance(event, SortEvent):
@@ -14,6 +24,9 @@ class EventStore:
             payload = dict(event)
             SortEvent(**payload)
         self.events.append(payload)
+        if self.log_path:
+            with open(self.log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(json.dumps(payload, ensure_ascii=False) + "\n")
         return payload
 
     def summary(self):

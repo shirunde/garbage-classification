@@ -4,13 +4,15 @@ import json
 import urllib.request
 
 from control.arm import MockArm
+from control.session import SortingSession
 from control.sorter import SmileScript, Sorter
-from control.voice import START, parse_command
+from control.voice import START
+from dashboard.store import EventStore
 from shared.schemas import DetectResult
 from vision.detector import MockDetector, ScriptedColorTracker
 
 
-def build_demo(clock):
+def build_demo(clock, store):
     detector = MockDetector(
         [
             DetectResult("recyclable", 320, 240, 0.91, 1),
@@ -23,10 +25,11 @@ def build_demo(clock):
         detector=detector,
         arm=arm,
         color_tracker=ScriptedColorTracker(),
-        face=SmileScript([True, False]),
+        face=SmileScript([True, True, False]),
         clock=clock,
+        sink=store,
     )
-    return sorter, arm
+    return SortingSession(sorter, store)
 
 
 def post_event(event, url):
@@ -37,18 +40,19 @@ def post_event(event, url):
 
 
 def main():
-    if parse_command(START) != "start":
-        raise SystemExit("语音启动词未接通")
     tick = {"now": 1000}
 
     def clock():
         tick["now"] += 100
         return tick["now"]
 
-    sorter, _arm = build_demo(clock)
-    for _ in range(3):
-        event = sorter.run_once()
-        print(json.dumps(event.to_dict(), ensure_ascii=False))
+    store = EventStore()
+    session = build_demo(clock, store)
+    session.handle_text(START)
+    while session.mode == "running":
+        event = session.tick()
+        if event is not None:
+            print(json.dumps(event.to_dict(), ensure_ascii=False))
 
 
 if __name__ == "__main__":

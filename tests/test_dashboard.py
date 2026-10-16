@@ -1,9 +1,11 @@
 import json
+import tempfile
 import threading
 import unittest
 import urllib.request
 
 from dashboard.server import serve
+from dashboard.store import EventStore
 from shared.schemas import Reason, SortEvent
 
 
@@ -36,6 +38,16 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("其他垃圾", page)
         self.assertIn(Reason.OK, page)
         self.assertEqual(server.store.summary()["success"], 1)
+
+    def test_pending_class_is_visible_and_events_are_logged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = EventStore(log_path=directory + "/events.jsonl")
+            store.show_pending("hazardous")
+            self.assertEqual(store.pending_cls, "hazardous")
+            store.publish(sample_event())
+            with open(store.log_path, encoding="utf-8") as log_file:
+                saved = json.loads(log_file.read().strip())
+            self.assertEqual(saved["reason"], Reason.OK)
 
 
 if __name__ == "__main__":

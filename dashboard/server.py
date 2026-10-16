@@ -20,7 +20,13 @@ def make_handler(store):
         def do_GET(self):
             path = urlparse(self.path).path
             if path == "/api/events":
-                self._send_json({"events": store.events, "summary": store.summary()})
+                self._send_json(
+                    {
+                        "events": store.events,
+                        "summary": store.summary(),
+                        "pending_cls": store.pending_cls,
+                    }
+                )
                 return
             if path not in PAGES:
                 self._send_text("页面不存在", 404)
@@ -92,10 +98,12 @@ def render_page(path, store):
             for name, count in store.by_class().items()
         )
     else:
-        body = "".join(
+        pending = CLASS_LABELS.get(store.pending_cls, "无")
+        counts = "".join(
             f"<p>{reason}：{count}</p>"
             for reason, count in store.fallback_counts().items()
         )
+        body = f"<p>待确认类别：{pending}</p>{counts}"
     return (
         "<!doctype html><meta charset='utf-8'>"
         f"<title>{title}</title><nav>{nav}</nav><h1>{title}</h1>{body}"
