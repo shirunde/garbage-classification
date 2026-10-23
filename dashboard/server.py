@@ -77,6 +77,23 @@ def make_handler(store):
     return Handler
 
 
+STYLE = """
+body{font-family:Segoe UI,Helvetica,Arial,sans-serif;margin:24px;background:#f6f7f9;color:#1f2937}
+nav{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+nav a{color:#0f766e;text-decoration:none;padding:6px 10px;background:#fff;border:1px solid #d1d5db;border-radius:6px}
+nav a:hover{background:#ecfeff}
+h1{font-size:22px;margin:0 0 16px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;max-width:880px}
+.stat{font-size:18px;margin:8px 0}
+.pending{font-weight:600;color:#b45309}
+table{border-collapse:collapse;width:100%}
+th,td{border-bottom:1px solid #e5e7eb;text-align:left;padding:8px;font-size:14px}
+th{color:#6b7280;font-weight:600}
+.ok{color:#047857}.fail{color:#b91c1c}
+.hint{color:#6b7280;font-size:13px;margin-top:12px}
+"""
+
+
 def render_page(path, store):
     title = PAGES[path]
     nav = "".join(
@@ -85,16 +102,21 @@ def render_page(path, store):
     if path == "/":
         summary = store.summary()
         body = (
-            f"<p>总次数 {summary['total']}</p>"
-            f"<p>成功 {summary['success']}</p>"
-            f"<p>失败 {summary['failed']}</p>"
+            f"<p class='stat'>总次数 {summary['total']}</p>"
+            f"<p class='stat'>成功 {summary['success']}</p>"
+            f"<p class='stat'>失败 {summary['failed']}</p>"
+            "<p class='hint'>页面每 2 秒自动刷新，便于本机 mock 演示。</p>"
         )
     elif path == "/events":
         rows = "".join(_event_row(event) for event in reversed(store.events))
-        body = "<table><tr><th>时间</th><th>类别</th><th>结果</th><th>耗时</th><th>原因</th></tr>" + rows + "</table>"
+        body = (
+            "<table><tr><th>时间</th><th>类别</th><th>结果</th><th>耗时(ms)</th><th>原因</th></tr>"
+            + (rows or "<tr><td colspan='5'>暂无事件</td></tr>")
+            + "</table>"
+        )
     elif path == "/categories":
         body = "".join(
-            f"<p>{CLASS_LABELS[name]}：{count}</p>"
+            f"<p class='stat'>{CLASS_LABELS[name]}：{count}</p>"
             for name, count in store.by_class().items()
         )
     else:
@@ -103,19 +125,24 @@ def render_page(path, store):
             f"<p>{reason}：{count}</p>"
             for reason, count in store.fallback_counts().items()
         )
-        body = f"<p>待确认类别：{pending}</p>{counts}"
+        body = f"<p class='pending'>待确认类别：{pending}</p>{counts}"
     return (
-        "<!doctype html><meta charset='utf-8'>"
-        f"<title>{title}</title><nav>{nav}</nav><h1>{title}</h1>{body}"
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta http-equiv='refresh' content='2'>"
+        f"<title>{title}</title><style>{STYLE}</style></head><body>"
+        f"<nav>{nav}</nav><div class='card'><h1>{title}</h1>{body}</div>"
+        "</body></html>"
     )
 
 
 def _event_row(event):
     label = CLASS_LABELS.get(event["cls"], event["cls"] or "-")
     result = "成功" if event["ok"] else "失败"
+    result_class = "ok" if event["ok"] else "fail"
     reason = event["reason"] if event["reason"] in Reason.ALL else event["reason"]
     return (
-        f"<tr><td>{event['ts']}</td><td>{label}</td><td>{result}</td>"
+        f"<tr><td>{event['ts']}</td><td>{label}</td>"
+        f"<td class='{result_class}'>{result}</td>"
         f"<td>{event['cost_ms']}</td><td>{reason}</td></tr>"
     )
 

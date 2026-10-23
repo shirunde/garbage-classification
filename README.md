@@ -23,10 +23,12 @@
 ```bash
 git clone git@github.com:shirunde/garbage-classification.git
 cd garbage-classification
-python3 -m unittest discover -s tests
-python3 scripts/run_mock.py
-python3 -c "from dashboard.server import serve; serve('0.0.0.0', 8765).serve_forever()"
+python -m unittest discover -s tests
+python scripts/run_mock.py
+python scripts/run_mock.py --web
 ```
+
+`--web` 会在本机启动看板，并用假检测/假机械臂往里写事件。浏览器打开 `http://127.0.0.1:8765`。
 
 看板页面：
 
@@ -93,8 +95,9 @@ tests/           不依赖硬件的测试
 | 假检测、假机械臂、假表情 | 真机抓取、安全位、投放点 |
 | 单元测试 | 标定、语音麦克风、表情摄像头 |
 
-板端空位：
+板端：
 
-- `vision/detector.py` 里的 `AscendDetector`
-- `control/arm.py` 里的 `BoardArm`
-- `control/calibration.py` 里的像素到平面换算
+- `control/arm.py` 的 `BoardArm` 已按课例 `Arm_Lib` + `test8.py` 位姿接通；抓取点仍是固定示教点，尚未用视觉 u,v
+- 位姿在 `control/poses.py`，现场改投放点只改这里
+- 板上冒烟：`python scripts/run_board_smoke.py safe|wave|grasp`
+- 仍空：`AscendDetector`；`calibration.pixel_to_plane`
