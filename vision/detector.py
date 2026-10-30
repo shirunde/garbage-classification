@@ -20,9 +20,19 @@ class ScriptedColorTracker:
     """置信度低于 0.5 时的颜色追踪兜底。返回 None 表示仍然失败。"""
 
     def __init__(self, result=None):
-        self.result = result
+        if result is None:
+            self.script = []
+        elif isinstance(result, list):
+            self.script = list(result)
+        else:
+            self.script = None
+            self.result = result
 
     def locate(self, detect):
+        if self.script is not None:
+            if not self.script:
+                return None
+            return self.script.pop(0)
         return self.result
 
 

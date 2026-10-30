@@ -36,7 +36,7 @@ class DashboardTest(unittest.TestCase):
         with urllib.request.urlopen(base + "/events", timeout=2) as response:
             page = response.read().decode("utf-8")
         self.assertIn("其他垃圾", page)
-        self.assertIn(Reason.OK, page)
+        self.assertIn("分拣成功", page)
         self.assertEqual(server.store.summary()["success"], 1)
 
     def test_pending_class_is_visible_and_events_are_logged(self):

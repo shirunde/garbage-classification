@@ -13,6 +13,15 @@ CLASS_LABELS = {
     "other": "其他垃圾",
 }
 
+REASON_LABELS = {
+    "ok": "分拣成功",
+    "low_conf_color_track": "低置信度，颜色追踪仍失败",
+    "grasp_fail": "抓取失败",
+    "need_confirm_timeout": "表情确认超时，已跳过",
+    "timeout_no_target": "超时未发现目标",
+    "comm_error": "臂侧通信异常",
+}
+
 
 class Reason:
     OK = "ok"
