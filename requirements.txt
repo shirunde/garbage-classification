@@ -1,2 +1,4 @@
 # 框架本体使用 Python 标准库。
-# 板端联调时再安装课程环境里的 ais_bench、opencv、ROS2 依赖。
+# 板端机械臂：先安装课程包 0.py_install（Arm_Lib），再装 smbus。
+# pip3 install smbus
+# 板端联调视觉时再安装 ais_bench、opencv、ROS2 依赖。

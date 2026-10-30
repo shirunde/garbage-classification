@@ -138,7 +138,8 @@ class BoardArm:
                 last = exc
                 time.sleep(0.05)
                 continue
-            if result not in (0, None):
-                return result
+            # 课例 Arm_Lib 成功时返回 None；0 同样视为成功。
+            if result in (0, None) or result:
+                return True
             time.sleep(0.05)
         raise CommError(f"舵机写入失败 id={servo_id} angle={angle} last={last}")

@@ -99,5 +99,6 @@ tests/           不依赖硬件的测试
 
 - `control/arm.py` 的 `BoardArm` 已按课例 `Arm_Lib` + `test8.py` 位姿接通；抓取点仍是固定示教点，尚未用视觉 u,v
 - 位姿在 `control/poses.py`，现场改投放点只改这里
-- 板上冒烟：`python scripts/run_board_smoke.py safe|wave|grasp`
+- 板上冒烟：`python3 scripts/run_board_smoke.py safe|wave|grasp`
+- 板端驱动：`cd /root/robot_arm_dependency/0.py_install && python3 setup.py install`，再 `pip3 install smbus`
 - 仍空：`AscendDetector`；`calibration.pixel_to_plane`

@@ -11,7 +11,7 @@ class FakeDevice:
 
     def Arm_serial_servo_write(self, servo_id, angle, use_time):
         self.writes.append((servo_id, angle, use_time))
-        return 1
+        return None
 
 
 class BoardArmTest(unittest.TestCase):
@@ -44,7 +44,7 @@ class BoardArmTest(unittest.TestCase):
     def test_servo_write_failure_raises_comm_error(self):
         class DeadDevice:
             def Arm_serial_servo_write(self, servo_id, angle, use_time):
-                return 0
+                raise OSError("I2C error")
 
         arm = BoardArm(device=DeadDevice())
         with self.assertRaises(CommError):
