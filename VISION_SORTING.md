@@ -6,6 +6,7 @@
 - `control.calibration.CalibrationRecord` maps image pixels to arm-base XY using four measured correspondences, and rejects detections outside the calibrated polygon.
 - `control.kinematics.RosKinematicsClient` calls the board's `/trial_service` IK service. It rejects targets below 0.20 m because the current service treats those as a separate special-height mode.
 - `control.arm.BoardArm` uses the returned joint angles for the pickup, then the project's configured class-specific bin poses.
+- Camera/inference exceptions now create a `vision_error` event, pause the session, and use wall-clock milliseconds for event timestamps while measuring duration with a monotonic clock.
 - `scripts/run_board_sorting.py --recognize-only` exercises camera and model inference without loading the arm driver. `--enable-arm` enables one sort per Enter key press and writes JSONL events.
 - `scripts/run_board_sorting.sh` loads the installed Ascend, ROS 2, workspace, and Arm_Lib environments before launching the Python entry point.
 
