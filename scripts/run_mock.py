@@ -66,7 +66,7 @@ def main():
     pause_s = args.pause if args.pause is not None else (1.2 if args.web else 0.0)
 
     if args.web:
-        server = serve(args.host, args.port, store=store)
+        server = serve(args.host, args.port, store=store, data_source="mock")
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         base = f"http://{args.host}:{args.port}"
@@ -81,6 +81,8 @@ def main():
             print("\n已退出")
         finally:
             server.shutdown()
+            server.server_close()
+            thread.join()
         return
 
     run_session(session, pause_s=pause_s)

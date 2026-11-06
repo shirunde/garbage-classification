@@ -46,6 +46,7 @@ class DemoScenarioTest(unittest.TestCase):
         server = serve("127.0.0.1", 0, store=store)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         port = server.server_address[1]
         base = f"http://127.0.0.1:{port}"

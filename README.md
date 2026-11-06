@@ -43,6 +43,9 @@ python scripts/run_mock.py --web
 
 事件写入：`POST /api/events`，字段见下方接口。
 
+看板已支持局部自动更新、事件组合筛选与分页、连接失败提示和响应式布局。
+页面与统计口径见 [dashboard/README.md](dashboard/README.md)。
+
 ## 协作方式
 
 1. 从 `main` 拉最新代码：`git pull origin main`
