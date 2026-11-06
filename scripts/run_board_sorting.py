@@ -92,7 +92,11 @@ def main():
         print("识别模式：按 Enter 识别一帧；输入 q 退出。此模式不会加载机械臂驱动。")
         try:
             if args.image:
-                result = detector.detect()
+                try:
+                    result = detector.detect()
+                except Exception as exc:
+                    print(f"图片推理失败: {exc}", file=sys.stderr)
+                    return 3
                 print(json.dumps(result.__dict__ if result else {"target": None}, ensure_ascii=False))
                 return 0
             while input("detect> ").strip().lower() != "q":
