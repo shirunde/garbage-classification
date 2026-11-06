@@ -25,12 +25,13 @@ class SmileScript:
 
 
 class Sorter:
-    def __init__(self, detector, arm, color_tracker, face, clock, sink=None, confirm_timeout_ms=3000):
+    def __init__(self, detector, arm, color_tracker, face, clock, sink=None, confirm_timeout_ms=3000, timestamp=None):
         self.detector = detector
         self.arm = arm
         self.color_tracker = color_tracker
         self.face = face
         self.clock = clock
+        self.timestamp = timestamp or clock
         self.sink = sink or NullSink()
         self.confirm_timeout_ms = confirm_timeout_ms
         self.halted = False
@@ -40,7 +41,11 @@ class Sorter:
         if self.halted:
             raise CommError("通信异常后已停止下发新运动")
         started = self.clock()
-        detect = self.detector.detect()
+        try:
+            detect = self.detector.detect()
+        except Exception:
+            self.halted = True
+            return self._event("", 0, False, started, Reason.VISION_ERROR)
         if detect is None:
             return self._event("", 0, False, started, Reason.TIMEOUT_NO_TARGET)
 
@@ -60,7 +65,11 @@ class Sorter:
             return self._event(detect.cls, 0, False, started, Reason.COMM_ERROR)
 
         if not grasped:
-            self.arm.go_safe()
+            try:
+                self.arm.go_safe()
+            except CommError:
+                self.halted = True
+                return self._event(detect.cls, 0, False, started, Reason.COMM_ERROR)
             return self._event(detect.cls, 0, False, started, Reason.GRASP_FAIL)
 
         if self.face.wait(self.confirm_timeout_ms):
@@ -89,7 +98,7 @@ class Sorter:
         now = self.clock()
         return SortEvent(
             event_id=str(self._seq),
-            ts=now,
+            ts=self.timestamp(),
             cls=cls,
             bin_id=bin_id,
             ok=ok,
