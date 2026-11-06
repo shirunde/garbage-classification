@@ -82,7 +82,7 @@ tests/           不依赖硬件的测试
 
 控制输出 `event`：`event_id`、`ts`、`cls`、`bin_id`、`ok`、`cost_ms`、`reason`。
 
-`reason`：`ok`、`low_conf_color_track`、`grasp_fail`、`need_confirm_timeout`、`timeout_no_target`、`comm_error`。
+`reason`：`ok`、`low_conf_color_track`、`grasp_fail`、`need_confirm_timeout`、`timeout_no_target`、`comm_error`、`vision_error`。视觉采集或推理故障会记为 `vision_error` 并暂停当前会话。
 
 ### 开发时不要拆掉的规则
 
