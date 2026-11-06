@@ -102,10 +102,11 @@ tests/           不依赖硬件的测试
 | 假检测、假机械臂、假表情 | 真机抓取、安全位、投放点 |
 | 单元测试 | 标定、语音麦克风、表情摄像头 |
 
-板端：
+板端识别与分拣状态：
 
-- `control/arm.py` 的 `BoardArm` 已按课例 `Arm_Lib` + `test8.py` 位姿接通；抓取点仍是固定示教点，尚未用视觉 u,v
-- 位姿在 `control/poses.py`，现场改投放点只改这里
-- 板上冒烟：`python3 scripts/run_board_smoke.py safe|wave|grasp`
-- 板端驱动：`cd /root/robot_arm_dependency/0.py_install && python3 setup.py install`，再 `pip3 install smbus`
-- 仍空：`AscendDetector`；`calibration.pixel_to_plane`
+- `vision/AscendDetector` 已接入 Ascend OM 推理，输出四类目标的类别、置信度和像素中心；模型二进制不入 Git，来源与部署方式见 `vision/MODEL_SOURCE.md`
+- `control/calibration.py` 已实现四点单应性映射和标定区域边界检查；需在现场填入实测像素点、机械臂基坐标和固定抓取高度
+- `control/kinematics.py` 调用课程 ROS 2 的 `/trial_service`；需先启动课程工作区中的 IK 服务
+- `control/arm.py` 按类别使用投放姿态；当前仍是课程示教值，需现场标定四个实际投放位
+- 板端启动方式、外部依赖和静态图片识别命令见 `VISION_SORTING.md`
+- 接上硬件后再验证相机、标定、抓取和性能指标；代码接通不等于真机验收通过
