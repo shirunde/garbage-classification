@@ -51,17 +51,31 @@ class CalibrationRecord:
         )
 
     def ready(self):
-        return (
-            self.image_points is not None
-            and self.base_xy_points is not None
-            and self.fixed_height is not None
-        )
+        if (
+            self.image_points is None
+            or self.base_xy_points is None
+            or self.fixed_height is None
+            or not math.isfinite(self.fixed_height)
+            or self.fixed_height < 0.2
+        ):
+            return False
+        try:
+            self._homography()
+        except CalibrationError:
+            return False
+        return True
 
     def _homography(self):
         import numpy as np
 
-        if self.image_points is None or self.base_xy_points is None or self.fixed_height is None:
-            raise CalibrationError("Workspace calibration is incomplete")
+        if (
+            self.image_points is None
+            or self.base_xy_points is None
+            or self.fixed_height is None
+            or not math.isfinite(self.fixed_height)
+            or self.fixed_height < 0.2
+        ):
+            raise CalibrationError("Calibration needs four point pairs and a finite grasp height >= 0.2 m")
         rows = []
         values = []
         for (u, v), (x, y) in zip(self.image_points, self.base_xy_points):
