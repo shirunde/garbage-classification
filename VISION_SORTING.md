@@ -18,12 +18,14 @@ The gripper's fifth-servo pose and the four bin joint poses in `control/poses.py
 
 ## Run
 
-After downloading the OM model into the path above, first test recognition only. This does not load the arm driver:
+After downloading the OM model into the path above, first test recognition only. This does not load the arm driver. A still image isolates model inference from camera setup:
 
 ```bash
 cd /root/garbage-classification
-bash scripts/run_board_sorting.sh --recognize-only --camera 0
+bash scripts/run_board_sorting.sh --recognize-only --image /path/to/sample.jpg
 ```
+
+Use `--camera 0` instead of `--image` to exercise a live camera once the board exposes it as a V4L2 device.
 
 For arm mode, first start the `trial_service` IK server in another terminal. Use a measured calibration JSON and a clear, supervised test area:
 
