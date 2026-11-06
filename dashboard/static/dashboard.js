@@ -163,7 +163,7 @@
       clearTimeout(timeout);
       busy = false;
       $('refresh-button').disabled = false;
-      timer = setTimeout(refresh, 2000);
+      timer = setTimeout(refresh, 500);
     }
   }
 
