@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import time
+from contextlib import redirect_stdout
+from io import StringIO
 
 from control import poses as default_poses
 
@@ -150,14 +152,25 @@ class BoardArm:
     def _servo_write(self, servo_id, angle, use_time, retries=3):
         last = None
         for _ in range(retries):
+            output = StringIO()
             try:
-                result = self.arm.Arm_serial_servo_write(servo_id, angle, use_time)
+                # The coursework Arm_Lib swallows SMBus exceptions and prints an
+                # error while returning None. Capture that message so a failed
+                # I2C write is never reported as a successful servo command.
+                with redirect_stdout(output):
+                    result = self.arm.Arm_serial_servo_write(servo_id, angle, use_time)
+                message = output.getvalue().strip()
+                if "i2c error" in message.lower():
+                    raise CommError(
+                        f"机械臂 I2C 写入失败 id={servo_id} angle={angle}: {message}"
+                    )
+            except CommError:
+                raise
             except Exception as exc:
                 last = exc
                 time.sleep(0.05)
                 continue
-            # 课例 Arm_Lib 成功时返回 None；0 同样视为成功。
-            if result in (0, None) or result:
+            if result == 0 or result is None or result:
                 return True
             time.sleep(0.05)
         raise CommError(f"舵机写入失败 id={servo_id} angle={angle} last={last}")
