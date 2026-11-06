@@ -7,6 +7,7 @@
 - `control.kinematics.RosKinematicsClient` calls the board's `/trial_service` IK service. It rejects targets below 0.20 m because the current service treats those as a separate special-height mode.
 - `control.arm.BoardArm` uses the returned joint angles for the pickup, then the project's configured class-specific bin poses.
 - `scripts/run_board_sorting.py --recognize-only` exercises camera and model inference without loading the arm driver. `--enable-arm` enables one sort per Enter key press and writes JSONL events.
+- `scripts/run_board_sorting.sh` loads the installed Ascend, ROS 2, workspace, and Arm_Lib environments before launching the Python entry point.
 
 ## Calibration required before arm mode
 
@@ -16,19 +17,17 @@ The gripper's fifth-servo pose and the four bin joint poses in `control/poses.py
 
 ## Run
 
-Source the installed ROS 2 and workspace environments in the shell before starting the script, and start the `trial_service` IK server in another shell. First run recognition only:
+After downloading the OM model into the path above, first test recognition only. This does not load the arm driver:
 
 ```bash
 cd /root/garbage-classification
-source /opt/ros/humble/setup.bash
-source /root/ros2_robot_arm/ros2_ws/install/setup.bash
-python3 scripts/run_board_sorting.py --recognize-only --camera 0
+bash scripts/run_board_sorting.sh --recognize-only --camera 0
 ```
 
-Arm mode requires a real calibration JSON and a clear, supervised test area:
+For arm mode, first start the `trial_service` IK server in another terminal. Use a measured calibration JSON and a clear, supervised test area:
 
 ```bash
-python3 scripts/run_board_sorting.py --enable-arm --camera 0 --calibration /path/to/calibration.json
+bash scripts/run_board_sorting.sh --enable-arm --camera 0 --calibration /path/to/calibration.json
 ```
 
 The initial model is a public course-project model, not yet evaluated against this team's own collected dataset. Upstream reports mAP@0.5 of 0.952 from 136 real and 800 synthetic images; this is not a measurement on the current camera/board. Record class counts for the team's own labeled data before claiming the course acceptance metric. See `vision/MODEL_SOURCE.md` for source and license notes.
