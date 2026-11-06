@@ -89,8 +89,12 @@ def main():
         ik.close()
         raise
     sink = EventLog(args.event_log)
-    sorter = Sorter(detector, arm, NoColorTracker(), NoFaceConfirmation(),
-                    lambda: time.monotonic_ns() // 1_000_000, sink=sink)
+    sorter = Sorter(
+        detector, arm, NoColorTracker(), NoFaceConfirmation(),
+        lambda: time.monotonic_ns() // 1_000_000,
+        sink=sink,
+        timestamp=lambda: time.time_ns() // 1_000_000,
+    )
     session = SortingSession(sorter, sink)
 
     print("分拣模式：按 Enter 识别并尝试分拣一个目标；输入 q 退出。低置信度目标会跳过。")
@@ -109,8 +113,11 @@ def main():
                 session.handle("stop")
             if event is not None:
                 print(json.dumps(event.to_dict(), ensure_ascii=False))
-            if sorter.halted or (event is not None and event.reason == Reason.COMM_ERROR):
-                print("发生机械臂通信错误；停止后续运动，请检查设备并人工恢复。")
+            if sorter.halted:
+                if event is not None and event.reason == Reason.VISION_ERROR:
+                    print("相机或视觉推理异常；分拣已暂停，请检查视觉设备后重启。")
+                else:
+                    print("发生机械臂通信错误；停止后续运动，请检查设备并人工恢复。")
                 break
     finally:
         detector.close()
