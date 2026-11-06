@@ -60,12 +60,12 @@ echo
 echo "== IK service discovery (read-only, 8 second timeout) =="
 if command -v ros2 >/dev/null 2>&1; then
   service_output=$(ROS2CLI_DISABLE_DAEMON=1 timeout 8 ros2 service list 2>&1)
-  if printf '%s\\n' "$service_output" | grep -Fq '/trial_service'; then
-    printf '%s\\n' "$service_output" | grep -F '/trial_service'
+  if printf '%s\n' "$service_output" | grep -Fq '/trial_service'; then
+    printf '%s\n' "$service_output" | grep -F '/trial_service'
   else
     echo "trial_service NOT FOUND (start the coursework IK server)"
     if [ -n "$service_output" ]; then
-      printf '%s\\n' "$service_output" | head -10
+      printf '%s\n' "$service_output" | head -10
     fi
   fi
 else
