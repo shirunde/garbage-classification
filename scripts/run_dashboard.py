@@ -43,7 +43,8 @@ def main() -> None:
     store = EventStore()
     load_history(log_path, store)
     server = serve(args.host, args.port, store=store, data_source="board")
-    print(f"看板已启动: http://{args.host}:{args.port}")
+    display_host = args.host if args.host not in ("0.0.0.0", "::") else "<板卡IP>"
+    print(f"看板已启动，浏览器访问: http://{display_host}:{args.port}")
     print(f"历史日志: {log_path}")
     try:
         server.serve_forever()
