@@ -37,6 +37,6 @@ class SortingSession:
             self.mode = "idle"
             return None
         self.sink.publish(event)
-        if event.reason in (Reason.TIMEOUT_NO_TARGET, Reason.COMM_ERROR):
+        if event.reason in (Reason.TIMEOUT_NO_TARGET, Reason.COMM_ERROR, Reason.VISION_ERROR):
             self.mode = "idle"
         return event
