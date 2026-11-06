@@ -46,7 +46,7 @@ class EventLog:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", default=None, help="Ascend .om path; defaults to the bundled model")
+    parser.add_argument("--model", default=None, help="Ascend .om path; defaults to models/blocks4_v3/blocks4_yolov8n.om")
     parser.add_argument("--camera", type=int, default=0, help="OpenCV camera index")
     parser.add_argument("--calibration", help="Measured workspace calibration JSON (required for arm mode)")
     parser.add_argument("--event-log", default=str(ROOT / "events.jsonl"))
@@ -55,22 +55,32 @@ def main():
     mode.add_argument("--enable-arm", action="store_true", help="Enable one sort per Enter; requires measured calibration")
     args = parser.parse_args()
 
-    detector = AscendDetector(model_path=args.model, camera_index=args.camera)
+    if args.enable_arm:
+        if not args.calibration:
+            parser.error("--enable-arm 需要 --calibration 标定文件")
+        calibration = CalibrationRecord.load(args.calibration)
+        if not calibration.ready():
+            parser.error("标定 JSON 必须包含四组 image/base 点和 fixed_height_m")
+
+    try:
+        detector = AscendDetector(model_path=args.model, camera_index=args.camera)
+    except Exception as exc:
+        print(f"视觉初始化失败: {exc}", file=sys.stderr)
+        return 2
+
     if args.recognize_only:
         print("识别模式：按 Enter 识别一帧；输入 q 退出。此模式不会加载机械臂驱动。")
         try:
             while input("detect> ").strip().lower() != "q":
-                result = detector.detect()
+                try:
+                    result = detector.detect()
+                except Exception as exc:
+                    print(f"相机采集或模型推理失败: {exc}", file=sys.stderr)
+                    return 3
                 print(json.dumps(result.__dict__ if result else {"target": None}, ensure_ascii=False))
         finally:
             detector.close()
         return
-
-    if not args.calibration:
-        parser.error("--enable-arm 需要 --calibration 标定文件")
-    calibration = CalibrationRecord.load(args.calibration)
-    if not calibration.ready():
-        parser.error("标定 JSON 必须包含四组 image/base 点和 fixed_height_m")
 
     ik = RosKinematicsClient()
     try:
@@ -90,8 +100,13 @@ def main():
             if command == "q":
                 break
             session.handle("start")
-            event = session.tick()
-            session.handle("stop")
+            try:
+                event = session.tick()
+            except Exception as exc:
+                print(f"视觉采集或分拣流程异常，已停止: {exc}", file=sys.stderr)
+                break
+            finally:
+                session.handle("stop")
             if event is not None:
                 print(json.dumps(event.to_dict(), ensure_ascii=False))
             if sorter.halted or (event is not None and event.reason == Reason.COMM_ERROR):
