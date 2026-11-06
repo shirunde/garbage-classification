@@ -34,3 +34,15 @@ bash scripts/run_board_sorting.sh --enable-arm --camera 0 --calibration /path/to
 ```
 
 The initial model is a public course-project model, not yet evaluated against this team's own collected dataset. Upstream reports mAP@0.5 of 0.952 from 136 real and 800 synthetic images; this is not a measurement on the current camera/board. Record class counts for the team's own labeled data before claiming the course acceptance metric. See `vision/MODEL_SOURCE.md` for source and license notes.
+
+## Acceptance checklist
+
+These are project requirements, not results measured on this board yet:
+
+- Collect and label at least 200 images per category from the actual work area, including normal and dim lighting; keep per-category source/count records.
+- Evaluate the four categories on a held-out set and report mAP@0.5; target is at least 0.75. The upstream model's reported 0.952 is not this project's evaluation.
+- Measure board inference latency and target at most 150 ms per frame.
+- After camera and calibration are ready, run 10 end-to-end sorts. Target at least 8 successes, with each sort completed within 20 seconds.
+- Record no-target, low-confidence, failed-grasp, and communication-error cases in the event log and verify the recovery behavior.
+
+Do not mark these items complete from the model's upstream report or from software wiring alone.
