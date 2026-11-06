@@ -48,6 +48,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default=None, help="Ascend .om path; defaults to models/blocks4_v3/blocks4_yolov8n.om")
     parser.add_argument("--camera", type=int, default=0, help="OpenCV camera index")
+    parser.add_argument("--image", help="Run one still image instead of opening a camera (recognize-only mode)")
     parser.add_argument("--calibration", help="Measured workspace calibration JSON (required for arm mode)")
     parser.add_argument("--event-log", default=str(ROOT / "events.jsonl"))
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -62,8 +63,27 @@ def main():
         if not calibration.ready():
             parser.error("标定 JSON 必须包含四组 image/base 点和 fixed_height_m")
 
+    if args.image and not args.recognize_only:
+        parser.error("--image 只能与 --recognize-only 一起使用")
+
+    frame_source = None
+    if args.image:
+        try:
+            import cv2
+            image = cv2.imread(args.image)
+            if image is None:
+                raise ValueError(f"无法读取图片: {args.image}")
+            frame_source = lambda: image.copy()
+        except Exception as exc:
+            print(f"图片读取失败: {exc}", file=sys.stderr)
+            return 2
+
     try:
-        detector = AscendDetector(model_path=args.model, camera_index=args.camera)
+        detector = AscendDetector(
+            model_path=args.model,
+            camera_index=args.camera,
+            frame_source=frame_source,
+        )
     except Exception as exc:
         print(f"视觉初始化失败: {exc}", file=sys.stderr)
         return 2
@@ -71,6 +91,10 @@ def main():
     if args.recognize_only:
         print("识别模式：按 Enter 识别一帧；输入 q 退出。此模式不会加载机械臂驱动。")
         try:
+            if args.image:
+                result = detector.detect()
+                print(json.dumps(result.__dict__ if result else {"target": None}, ensure_ascii=False))
+                return 0
             while input("detect> ").strip().lower() != "q":
                 try:
                     result = detector.detect()
