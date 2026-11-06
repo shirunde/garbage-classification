@@ -42,11 +42,7 @@ bash scripts/run_board_sorting.sh --enable-arm --camera 0 --calibration /path/to
 
 The runner always appends events to local JSONL. Dashboard posting is optional; delivery failures are reported without discarding the local log.
 
-For arm mode, first start the `trial_service` IK server in another terminal. Use a measured calibration JSON and a clear, supervised test area:
-
-```bash
-bash scripts/run_board_sorting.sh --enable-arm --camera 0 --calibration /path/to/calibration.json
-```
+Arm mode requires the `trial_service` IK server to be running in another terminal. Use the dashboard-enabled command above, a measured calibration JSON, and a clear, supervised test area.
 
 The initial model is a public course-project model, not yet evaluated against this team's own collected dataset. Upstream reports mAP@0.5 of 0.952 from 136 real and 800 synthetic images; this is not a measurement on the current camera/board. Record class counts for the team's own labeled data before claiming the course acceptance metric. See `vision/MODEL_SOURCE.md` for source and license notes.
 
