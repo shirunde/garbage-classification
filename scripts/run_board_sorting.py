@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -32,17 +34,31 @@ class NoFaceConfirmation:
 
 
 class EventLog:
-    def __init__(self, path):
+    def __init__(self, path, dashboard_url=None):
         self.path = Path(path)
+        self.dashboard_url = dashboard_url.rstrip("/") if dashboard_url else None
 
     def show_pending(self, cls):
         return None
 
     def publish(self, event):
+        payload = json.dumps(event.to_dict(), ensure_ascii=False)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as log:
-            log.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
-
+            log.write(payload + "\\n")
+        if self.dashboard_url:
+            request = Request(
+                self.dashboard_url + "/api/events",
+                data=payload.encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urlopen(request, timeout=1.0) as response:
+                    if response.status not in (200, 201):
+                        print(f"看板未接收事件: HTTP {response.status}", file=sys.stderr)
+            except Exception as exc:
+                print(f"事件已保存在本地，但发送到看板失败: {exc}", file=sys.stderr)
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -51,6 +67,7 @@ def main():
     parser.add_argument("--image", help="Run one still image instead of opening a camera (recognize-only mode)")
     parser.add_argument("--calibration", help="Measured workspace calibration JSON (required for arm mode)")
     parser.add_argument("--event-log", default=str(ROOT / "events.jsonl"))
+    parser.add_argument("--dashboard-url", default=os.environ.get("SORTING_DASHBOARD_URL"), help="Optional dashboard base URL, e.g. http://127.0.0.1:8765")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--recognize-only", action="store_true", help="Run one camera/model inference per Enter; never open the arm")
     mode.add_argument("--enable-arm", action="store_true", help="Enable one sort per Enter; requires measured calibration")
@@ -116,7 +133,7 @@ def main():
     except Exception:
         ik.close()
         raise
-    sink = EventLog(args.event_log)
+    sink = EventLog(args.event_log, dashboard_url=args.dashboard_url)
     sorter = Sorter(
         detector, arm, NoColorTracker(), NoFaceConfirmation(),
         lambda: time.monotonic_ns() // 1_000_000,
