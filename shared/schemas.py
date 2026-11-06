@@ -20,6 +20,7 @@ REASON_LABELS = {
     "need_confirm_timeout": "表情确认超时，已跳过",
     "timeout_no_target": "超时未发现目标",
     "comm_error": "臂侧通信异常",
+    "vision_error": "相机采集或视觉推理异常",
 }
 
 
@@ -30,6 +31,7 @@ class Reason:
     NEED_CONFIRM_TIMEOUT = "need_confirm_timeout"
     TIMEOUT_NO_TARGET = "timeout_no_target"
     COMM_ERROR = "comm_error"
+    VISION_ERROR = "vision_error"
 
     ALL = (
         OK,
@@ -38,6 +40,7 @@ class Reason:
         NEED_CONFIRM_TIMEOUT,
         TIMEOUT_NO_TARGET,
         COMM_ERROR,
+        VISION_ERROR,
     )
 
 
