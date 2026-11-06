@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from contextlib import redirect_stdout
 from io import StringIO
@@ -132,6 +133,13 @@ class BoardArm:
         time.sleep(0.6)
 
     def _move(self, joints, s_time=500):
+        joints = list(joints)
+        limits = (180.0, 180.0, 180.0, 180.0, 270.0)
+        if len(joints) != len(limits) or not all(
+            math.isfinite(float(angle)) and 0.0 <= float(angle) <= limit
+            for angle, limit in zip(joints, limits)
+        ):
+            raise CommError(f"拒绝下发越界关节姿态: {joints}")
         for index, angle in enumerate(joints, start=1):
             use_time = s_time
             if index == 5:
