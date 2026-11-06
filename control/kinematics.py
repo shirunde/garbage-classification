@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 import shutil
 import subprocess
@@ -15,15 +16,18 @@ class RosKinematicsClient:
         self.timeout_sec = float(timeout_sec)
 
     def solve(self, x_m, y_m, z_m):
-        if float(z_m) < 0.2:
+        x_m, y_m, z_m = float(x_m), float(y_m), float(z_m)
+        if not all(math.isfinite(value) for value in (x_m, y_m, z_m)):
+            raise ValueError("IK target coordinates must be finite")
+        if z_m < 0.2:
             raise ValueError(
                 "The board IK server treats tar_z below 0.2 m as a special-height mode; "
                 "calibrate a direct target height at or above 0.2 m before sorting"
             )
         payload = (
             "{kin_name: ik, "
-            f"tar_x: {float(x_m):.8f}, tar_y: {float(y_m):.8f}, "
-            f"tar_z: {float(z_m):.8f}"
+            f"tar_x: {x_m:.8f}, tar_y: {y_m:.8f}, "
+            f"tar_z: {z_m:.8f}"
             "}"
         )
         try:
@@ -50,7 +54,11 @@ class RosKinematicsClient:
             if match is None:
                 raise RuntimeError(f"DOFBOT IK response has no joint{index}: {response.strip()}")
             joints.append(float(match.group(1)))
-        if not all(0.0 <= angle <= 270.0 for angle in joints):
+        limits = (180.0, 180.0, 180.0, 180.0, 270.0)
+        if not all(
+            math.isfinite(angle) and 0.0 <= angle <= limit
+            for angle, limit in zip(joints, limits)
+        ):
             raise RuntimeError(f"DOFBOT IK returned out-of-range joints: {joints}")
         return joints
 
