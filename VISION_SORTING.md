@@ -18,14 +18,29 @@ The gripper's fifth-servo pose and the four bin joint poses in `control/poses.py
 
 ## Run
 
-After downloading the OM model into the path above, first test recognition only. This does not load the arm driver. A still image isolates model inference from camera setup:
+After pulling the branch, run the read-only preflight first. It does not open Arm_Lib or send servo/I2C commands:
 
 ```bash
 cd /root/garbage-classification
+bash scripts/diagnose_board.sh
+```
+
+After downloading the OM model into the path above, test recognition only. This does not load the arm driver. A still image isolates model inference from camera setup:
+
+```bash
 bash scripts/run_board_sorting.sh --recognize-only --image /path/to/sample.jpg
 ```
 
 Use `--camera 0` instead of `--image` to exercise a live camera once the board exposes it as a V4L2 device.
+
+To send hardware events to the dashboard, run it in a second terminal and configure the sort runner with its local URL:
+
+```bash
+python3 scripts/run_dashboard.py --host 0.0.0.0 --port 8765
+bash scripts/run_board_sorting.sh --enable-arm --camera 0 --calibration /path/to/calibration.json --dashboard-url http://127.0.0.1:8765
+```
+
+The runner always appends events to local JSONL. Dashboard posting is optional; delivery failures are reported without discarding the local log.
 
 For arm mode, first start the `trial_service` IK server in another terminal. Use a measured calibration JSON and a clear, supervised test area:
 
