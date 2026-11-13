@@ -92,6 +92,17 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('id="class-filter"', page)
         self.assertIn('id="connection-error"', page)
 
+    def test_time_filter_export_and_polling_controls(self):
+        store = EventStore()
+        store.publish(sample_event())
+        page = render_page("/events", store)
+        for element in ("time-filter", "export-events", "event-notice", "pause-refresh"):
+            self.assertIn(f'id="{element}"', page)
+        status = render_page("/status", store)
+        self.assertIn('id="polling-state"', status)
+        self.assertNotIn("<dd>2 秒</dd>", status)
+        self.assertIn("4 号箱 · 黄色", page)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,6 +23,7 @@ STATIC_FILES = {
     "/static/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
 }
 STATIC_ROOT = Path(__file__).with_name("static")
+BIN_COLORS = {1: "蓝色", 2: "红色", 3: "绿色", 4: "黄色"}
 
 
 def icon(name, size=20):
@@ -118,7 +119,7 @@ def event_row(event):
     return (f'<tr><td class="event-id">#{escape(str(event["event_id"]))}</td>'
             f'<td class="time-cell" data-ts="{escape(str(event["ts"]), quote=True)}">时标 {escape(str(event["ts"]))}</td>'
             f'<td><span class="class-label"><i class="class-dot class-{index}"></i>{label}</span></td>'
-            f'<td>{escape(str(event["bin_id"])) + " 号箱" if event["bin_id"] else "—"}</td>'
+            f'<td>{escape(str(event["bin_id"])) + " 号箱 · " + BIN_COLORS.get(event["bin_id"], "") if event["bin_id"] else "—"}</td>'
             f'<td><span class="badge {badge}">{result}</span></td>'
             f'<td class="numeric">{escape(str(event["cost_ms"]))}<span class="unit"> ms</span></td>'
             f'<td class="reason-cell">{reason}</td></tr>')
@@ -182,14 +183,17 @@ def events_page(data):
     filters = (f'<form id="filters" class="filters" role="search"><label>类别<select id="class-filter"><option value="">全部类别</option>{options}<option value="__none">无目标</option></select></label>'
                '<label>结果<select id="result-filter"><option value="">全部结果</option><option value="success">成功</option><option value="failed">未成功</option></select></label>'
                f'<label>原因<select id="reason-filter"><option value="">全部原因</option>{reasons}</select></label>'
+               '<label>时间范围<select id="time-filter"><option value="">全部时间</option><option value="today">今天</option><option value="24h">最近24小时</option><option value="7d">最近7天</option></select></label>'
                '<label class="search-label">搜索<input id="event-search" type="search" placeholder="编号、类别或原因" autocomplete="off"></label>'
                '<button class="button subtle" type="reset">重置</button></form>')
     pager = ('<div class="pagination"><span id="result-count">共 ' + str(len(data["events"])) + ' 条事件</span>'
              '<div class="pager-controls"><label>每页<select id="page-size"><option>10</option><option>20</option><option>50</option></select></label>'
              '<button id="previous-page" class="button subtle" type="button" disabled>上一页</button>'
              '<span id="page-label">第 1 页</span><button id="next-page" class="button subtle" type="button">下一页</button></div></div>')
-    return panel("全部事件", filters + event_table(data["events"]) + pager,
-                 "筛选条件在自动更新时保持不变；无目标事件不会产生投放箱编号。")
+    export = '<button id="export-events" class="button" type="button">导出筛选结果 CSV</button>'
+    notice = '<p id="event-notice" class="small-note" role="status" aria-live="polite"></p>'
+    return panel("全部事件", filters + notice + event_table(data["events"]) + pager,
+                 "导出包含全部匹配记录；模拟时标不计入按日期筛选的结果。", action=export)
 
 
 def categories_page(data):
@@ -206,7 +210,7 @@ def categories_page(data):
 def status_page(data):
     pending = panel("待确认类别", '<div id="pending-content" class="pending-content">' + pending_content(data) + '</div>')
     device = panel("连接与设备", '<dl class="device-list"><div><dt>事件接口</dt><dd id="device-api-state">正在检查</dd></div>'
-                   '<div><dt>自动更新间隔</dt><dd>2 秒</dd></div><div><dt>机械臂状态</dt><dd class="muted">暂未提供</dd></div>'
+                   '<div><dt>自动更新</dt><dd id="polling-state">每0.5秒，失败后逐步延长</dd></div><div><dt>机械臂状态</dt><dd class="muted">暂未提供</dd></div>'
                    '<div><dt>摄像头状态</dt><dd class="muted">暂未提供</dd></div></dl><p class="small-note">接口连接正常仅表示数据可以读取，不代表硬件已连接。</p>')
     rows = "".join(f'<tr><td><span class="reason-icon">{icon("alert", 16)}</span>{escape(label)}</td><td class="code-cell">{escape(reason)}</td>'
                    f'<td class="numeric" data-reason-count="{escape(reason)}">{data["fallback"].get(reason, 0)}</td></tr>'
@@ -226,7 +230,7 @@ def render_page(path, store, data_source=None):
                   for (href, name), symbol in zip(PAGES.items(), nav_icons))
     renderer = {"/": home_page, "/events": events_page, "/categories": categories_page, "/status": status_page}[path]
     source_label = "模拟演示" if data_source == "mock" else "事件数据"
-    bootstrap = safe_json({"data": data, "config": {"classes": CLASS_LABELS, "reasons": REASON_LABELS, "page": path}})
+    bootstrap = safe_json({"data": data, "config": {"classes": CLASS_LABELS, "reasons": REASON_LABELS, "bin_colors": BIN_COLORS, "page": path}})
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
         f'<title>{title} · 循分工作台</title><link rel="stylesheet" href="/static/dashboard.css"><script defer src="/static/dashboard.js"></script></head>'
@@ -237,7 +241,7 @@ def render_page(path, store, data_source=None):
         '<div class="main-shell"><header class="topbar"><div class="breadcrumb">工作台 <span>/</span> <b>' + title + '</b></div>'
         f'<span class="source-tag">{source_label}</span></header><main id="main-content"><div class="page-heading"><div><div class="eyebrow">SORTING WORKSPACE</div>'
         f'<h1>{title}</h1><p>{DESCRIPTIONS[path]}</p></div><div class="sync-area"><span id="connection-state" class="connection checking" role="status"><i></i>正在连接</span>'
-        '<span id="last-updated" class="last-updated">尚未同步</span><button id="refresh-button" class="button refresh-button" type="button" aria-label="立即更新">' + icon("refresh", 17) + '更新</button></div></div>'
+        '<span id="last-updated" class="last-updated">尚未同步</span><button id="pause-refresh" class="button refresh-button" type="button" aria-pressed="false">暂停自动更新</button><button id="refresh-button" class="button refresh-button" type="button" aria-label="立即更新">' + icon("refresh", 17) + '更新</button></div></div>'
         '<div id="connection-error" class="error-banner" role="alert" hidden>数据更新失败，当前显示上次收到的记录。正在自动重试。</div>'
         '<div id="pending-banner" class="pending-banner" role="status" aria-live="polite" hidden></div>'
         '<noscript><div class="info-note">JavaScript 未启用，当前为首屏记录；请手动刷新获取新数据。</div></noscript>'

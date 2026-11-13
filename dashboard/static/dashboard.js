@@ -12,7 +12,19 @@
   let busy = false;
   let timer;
   let lastSuccess = null;
-  const filterIds = ["class-filter", "result-filter", "reason-filter", "event-search", "page-size"];
+  let failures = 0;
+  let paused = false;
+  let stopped = false;
+  let activeController = null;
+  try { paused = sessionStorage.getItem("sorting-paused") === "true"; } catch (_) {}
+  const filterIds = ["class-filter", "result-filter", "reason-filter", "time-filter", "event-search", "page-size"];
+
+  function eventMillis(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 946684800) return null;
+    const millis = number < 100000000000 ? number * 1000 : number;
+    return Number.isNaN(new Date(millis).valueOf()) ? null : millis;
+  }
 
   function formatTime(value) {
     const number = Number(value);
@@ -32,7 +44,7 @@
     const result = event.ok ? "成功" : badge === "neutral" ? "无目标" : "未成功";
     return '<tr><td class="event-id">#' + escape(event.event_id) + '</td><td class="time-cell">' + escape(formatTime(event.ts)) +
       '</td><td><span class="class-label"><i class="class-dot class-' + (index < 0 ? 4 : index) + '"></i>' + escape(label) +
-      '</span></td><td>' + (event.bin_id ? escape(event.bin_id) + " 号箱" : "—") + '</td><td><span class="badge ' + badge + '">' +
+      '</span></td><td>' + escape(binLabel(event)) + '</td><td><span class="badge ' + badge + '">' +
       result + '</span></td><td class="numeric">' + escape(event.cost_ms) + '<span class="unit"> ms</span></td><td class="reason-cell">' +
       escape(config.reasons[event.reason] || event.reason) + '</td></tr>';
   }
@@ -43,12 +55,21 @@
     const cls = $('class-filter').value;
     const result = $('result-filter').value;
     const reason = $('reason-filter').value;
+    const range = $('time-filter').value;
+    const now = Date.now();
+    const midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    const since = range === "today" ? midnight.valueOf() : now - (range === "7d" ? 7 : 1) * 86400000;
     const query = $('event-search').value.trim().toLocaleLowerCase();
     return events.filter((event) => {
       if (cls && (cls === "__none" ? !!event.cls : event.cls !== cls)) return false;
       if (result === "success" && !event.ok) return false;
       if (result === "failed" && event.ok) return false;
       if (reason && event.reason !== reason) return false;
+      if (range) {
+        const time = eventMillis(event.ts);
+        if (time === null || time < since || time > now) return false;
+      }
       const text = [event.event_id, event.cls, config.classes[event.cls], event.reason, config.reasons[event.reason]].join(" ").toLocaleLowerCase();
       return !query || text.includes(query);
     });
@@ -61,6 +82,14 @@
     const pages = Math.max(1, Math.ceil(events.length / pageSize));
     page = Math.min(page, pages);
     const current = events.slice((page - 1) * pageSize, page * pageSize);
+    if ($('export-events')) $('export-events').disabled = !events.length;
+    if ($('event-notice')) {
+      const successes = events.filter((event) => event.ok);
+      const costs = successes.map((event) => Number(event.cost_ms)).filter((n) => Number.isFinite(n) && n >= 0);
+      $('event-notice').textContent = events.length ? "匹配 " + events.length + " 条 · 成功 " + successes.length +
+        " 条 · 成功记录平均耗时 " + (costs.length ? Math.round(costs.reduce((a, b) => a + b, 0) / costs.length) + " ms" : "—") :
+        "当前没有匹配记录，调整筛选条件后可导出。";
+    }
     $('event-rows').innerHTML = current.length ? current.map(eventRow).join("") :
       '<tr><td colspan="7"><div class="empty-state"><strong>' +
       (data.events.length ? "没有符合条件的事件" : "暂无事件") + '</strong><span>' +
@@ -73,6 +102,36 @@
       $('previous-page').disabled = page <= 1;
       $('next-page').disabled = page >= pages;
     }
+  }
+
+  function binLabel(event) {
+    if (!event.bin_id) return "—";
+    return event.bin_id + " 号箱" + (config.bin_colors?.[event.bin_id] ? " · " + config.bin_colors[event.bin_id] : "");
+  }
+
+  function exportEvents() {
+    const events = filteredEvents();
+    if (!events.length) return;
+    const cell = (value) => {
+      let text = String(value ?? "");
+      // Prevent spreadsheet software from treating external strings as formulas.
+      if (/^[\s]*[=+@-]/.test(text)) text = "'" + text;
+      return '"' + text.replace(/"/g, '""') + '"';
+    };
+    const rows = [["事件编号", "原始时间戳", "时间 / 时标", "类别", "投放箱", "结果", "耗时(ms)", "原因"]];
+    events.forEach((event) => rows.push([
+      event.event_id, event.ts, formatTime(event.ts),
+      config.classes[event.cls] || event.cls || "无目标", binLabel(event),
+      event.ok ? "成功" : event.reason === "timeout_no_target" ? "无目标" : "未成功",
+      event.cost_ms, config.reasons[event.reason] || event.reason,
+    ]));
+    const content = "\ufeff" + rows.map((row) => row.map(cell).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "sorting-events-" + new Date().toISOString().slice(0, 10) + ".csv";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function renderCategories() {
@@ -131,7 +190,26 @@
     state.className = "connection " + (ok ? "connected" : "disconnected");
     state.innerHTML = '<i></i>' + (ok ? "数据同步正常" : "数据更新失败");
     $('connection-error').hidden = ok;
+    $('connection-error').textContent = paused ?
+      "数据更新失败，保留上次记录。自动更新已暂停，可点击“更新”重试。" :
+      "数据更新失败，保留上次记录。" + Math.round(retryDelay() / 1000) + "秒后自动重试，也可点击“更新”。";
     if ($('device-api-state')) $('device-api-state').textContent = ok ? "连接正常" : "更新失败";
+  }
+
+  function retryDelay() {
+    return failures ? Math.min(15000, 1000 * 2 ** (Math.min(failures, 5) - 1)) : 500;
+  }
+
+  function showPolling() {
+    $('pause-refresh').textContent = paused ? "恢复自动更新" : "暂停自动更新";
+    $('pause-refresh').setAttribute("aria-pressed", String(paused));
+    if ($('polling-state')) $('polling-state').textContent = paused ? "已暂停，可手动更新" :
+      failures ? Math.round(retryDelay() / 1000) + "秒后重试" : "每0.5秒";
+    if (!$('connection-error').hidden) {
+      $('connection-error').textContent = paused ?
+        "数据更新失败，保留上次记录。自动更新已暂停，可点击“更新”重试。" :
+        "数据更新失败，保留上次记录。" + Math.round(retryDelay() / 1000) + "秒后自动重试，也可点击“更新”。";
+    }
   }
 
   function updateTimestamp() {
@@ -141,29 +219,37 @@
       (age > 5 ? " · " + age + " 秒前" : "");
   }
 
-  async function refresh() {
-    if (busy) return;
+  async function refresh(manual = false) {
+    if (busy || stopped || (paused && !manual)) return;
     clearTimeout(timer);
     busy = true;
     $('refresh-button').disabled = true;
     const controller = new AbortController();
+    activeController = controller;
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {
       const response = await fetch("/api/events", { cache: "no-store", signal: controller.signal });
       if (!response.ok) throw new Error("HTTP " + response.status);
       const next = await response.json();
       if (!Array.isArray(next.events) || !next.summary || !next.by_class || !next.fallback) throw new Error("Invalid response");
+      if (stopped || (paused && !manual)) return;
       render(next);
+      failures = 0;
       lastSuccess = Date.now();
       updateTimestamp();
       setConnection(true);
     } catch (_) {
-      setConnection(false);
+      if (!stopped && (!paused || manual)) {
+        failures += 1;
+        setConnection(false);
+      }
     } finally {
       clearTimeout(timeout);
       busy = false;
+      activeController = null;
       $('refresh-button').disabled = false;
-      timer = setTimeout(refresh, 500);
+      showPolling();
+      if (!paused && !stopped) timer = setTimeout(() => refresh(), retryDelay());
     }
   }
 
@@ -195,10 +281,27 @@
     });
     $('previous-page').addEventListener("click", () => { page -= 1; renderEvents(); });
     $('next-page').addEventListener("click", () => { page += 1; renderEvents(); });
+    $('export-events').addEventListener("click", exportEvents);
   }
-  $('refresh-button').addEventListener("click", refresh);
-  window.addEventListener("pagehide", () => clearTimeout(timer));
+  $('refresh-button').addEventListener("click", () => refresh(true));
+  $('pause-refresh').addEventListener("click", () => {
+    paused = !paused;
+    try { sessionStorage.setItem("sorting-paused", String(paused)); } catch (_) {}
+    clearTimeout(timer);
+    if (paused) activeController?.abort();
+    showPolling();
+    if (!paused) refresh();
+  });
+  window.addEventListener("pagehide", () => {
+    stopped = true;
+    clearTimeout(timer);
+    activeController?.abort();
+  });
+  window.addEventListener("pageshow", () => {
+    if (stopped) { stopped = false; refresh(); }
+  });
   render(data);
+  showPolling();
   refresh();
   setInterval(updateTimestamp, 1000);
 })();
