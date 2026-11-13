@@ -1,0 +1,20 @@
+{
+  "mode": "continuous_fixed_pick",
+  "class": "other",
+  "confidence": 0.76171875,
+  "command_sequence_completed": true,
+  "cost_ms": 12759,
+  "physical_success_confirmed": false,
+  "observation_joints_deg": [
+    90,
+    130,
+    0,
+    0,
+    90
+  ],
+  "failure_reason": "wrong_drop_zone",
+  "actual_drop_zone": "blue",
+  "expected_drop_zone": "yellow",
+  "operator_feedback": "Block was placed in blue zone",
+  "correction": "Swapped recyclable and other destination poses after operator identified all four taught zones."
+}

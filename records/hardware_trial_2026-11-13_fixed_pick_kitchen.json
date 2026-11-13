@@ -1,0 +1,35 @@
+{
+  "recorded_at": "2026-11-13T07:29:03.832986+00:00",
+  "mode": "supervised_stepwise_fixed_pick",
+  "target": "green course block",
+  "classification": {
+    "class": "kitchen",
+    "confidence": 0.716796875
+  },
+  "pick_joints_deg": [
+    90,
+    53,
+    33,
+    36,
+    270
+  ],
+  "drop_joints_deg": [
+    136,
+    65,
+    20,
+    29,
+    270
+  ],
+  "observation_joints_deg": [
+    90,
+    140,
+    0,
+    0,
+    90
+  ],
+  "grasp_lift_confirmed_by_user": true,
+  "correct_drop_confirmed_by_user": true,
+  "automatic_unattended_cycle_tested": false,
+  "cycle_duration_ms": null,
+  "notes": "Fixed center pickup. Operator confirmed alignment, stable lift, and correct drop. Does not validate arbitrary-position calibration or classification accuracy."
+}

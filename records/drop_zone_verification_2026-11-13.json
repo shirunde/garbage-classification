@@ -1,0 +1,46 @@
+{
+  "recorded_at": "2026-11-13T07:38:55.992257+00:00",
+  "method": "operator identification of empty-gripper taught positions",
+  "poses": {
+    "recyclable": {
+      "color": "blue",
+      "joints": [
+        44,
+        65,
+        20,
+        28,
+        270
+      ]
+    },
+    "hazardous": {
+      "color": "red",
+      "joints": [
+        118,
+        22,
+        66,
+        56,
+        270
+      ]
+    },
+    "kitchen": {
+      "color": "green",
+      "joints": [
+        136,
+        65,
+        20,
+        29,
+        270
+      ]
+    },
+    "other": {
+      "color": "yellow",
+      "joints": [
+        65,
+        22,
+        68,
+        56,
+        270
+      ]
+    }
+  }
+}
