@@ -1,0 +1,12 @@
+{
+  "mode": "continuous_fixed_pick_corrected_drop_retest",
+  "model_class": "recyclable",
+  "model_confidence": 0.8974609375,
+  "commanded_class": "other",
+  "class_source": "known_yellow_block_test_override",
+  "expected_drop_zone": "yellow",
+  "command_sequence_completed": true,
+  "cost_ms": 12759,
+  "physical_success_confirmed": null,
+  "automatic_classification_success": false
+}
