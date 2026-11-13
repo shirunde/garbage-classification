@@ -25,11 +25,18 @@ class BoardArmTest(unittest.TestCase):
     def test_grasp_writes_servos_for_known_class(self):
         device = FakeDevice()
         arm = BoardArm(device=device)
-        ok = arm.grasp(DetectResult("recyclable", 1, 2, 0.9, 1))
+        ok = arm.grasp(DetectResult("recyclable", 320, 240, 0.9, 1))
         self.assertTrue(ok)
         self.assertGreater(len(device.writes), 10)
         servo_ids = {item[0] for item in device.writes}
         self.assertIn(6, servo_ids)
+
+    def test_uncalibrated_off_center_target_never_writes_servos(self):
+        device = FakeDevice()
+        arm = BoardArm(device=device)
+        with self.assertRaises(CommError):
+            arm.grasp(DetectResult("recyclable", 1, 2, 0.9, 1))
+        self.assertEqual(device.writes, [])
 
     def test_unknown_class_returns_false(self):
         device = FakeDevice()

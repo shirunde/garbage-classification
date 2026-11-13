@@ -1,5 +1,21 @@
 # Board vision and sorting
 
+## 固定点识别并分拣一次
+
+当前固定抓取点已在真机调试，四个投放位对应：可回收/蓝、有害/红、厨余/绿、其他/黄。使用下面的入口可直接读取相机和模型类别，连续完成一次抓取、投放和返回：
+
+    cd /root/garbage-classification
+    bash scripts/run_fixed_sort.sh --execute
+
+把一个方块放在此前示教的固定抓取位置。程序先移到观察姿态，读取5帧；至少3帧达到0.70置信度，且有效帧类别一致、目标位于观察画面的固定区域内，才会抓取。该模式使用既有固定关节姿态，不进行视觉坐标到机械臂XY换算，不能任意摆放方块。
+
+只检查识别、不驱动机械臂时省略 --execute（需已处于观察姿态）：
+
+    bash scripts/run_fixed_sort.sh
+    bash scripts/run_fixed_sort.sh --image /path/to/observation_640x480.jpg
+
+模型识别出的类别决定投放位，没有指定类别或颜色强制覆盖。多帧一致不能保证类别正确；此前黄色方块曾被高置信度误判，仍需现场核对模型结果。动作异常时不自动重复抓取。每次运行的识别帧摘要、类别、投放颜色和动作状态写入 records/fixed_sort_*.json；命令序列完成与现场抓取成功分别记录。
+
 ## What is wired
 
 - `vision.detector.AscendDetector` captures one frame, runs the Atlas OM model at `models/blocks4_v3/blocks4_yolov8n.om`, and returns the top detection as `(class, u, v, confidence)`. The model binary is ignored by Git; download the `assets-v4` release asset linked in `vision/MODEL_SOURCE.md` and place the OM file at that path after cloning.
@@ -14,7 +30,7 @@
 
 Do not use the example coordinates below as a real calibration. Replace them with four measured points around the reachable flat work area. `image_points_px` must be corners in the detector's original camera frame, ordered around the perimeter. For each corner, `base_xy_points_m` must contain the corresponding XY in the robot-base frame, in meters and in the same order. `fixed_height_m` is the end-effector target height and must be at least 0.20 m for the current IK server.
 
-The gripper's fifth-servo pose and the four bin joint poses in `control/poses.py` are still course-demo values. Verify/teach all four real bin positions and verify gripper contact height before enabling motion. Per-pixel calibration has not been physically validated on this setup.
+The fixed pickup and bin poses in `control/poses.py` were adjusted during the November 13 board trials. These taught poses support the fixed-point mode above; they do not establish a per-pixel calibration. Per-pixel calibration has not been physically validated on this setup.
 
 ## Run
 
