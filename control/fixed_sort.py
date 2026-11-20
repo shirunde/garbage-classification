@@ -3,6 +3,8 @@
 from dataclasses import replace
 from math import isfinite
 from statistics import mean
+import time
+from shared.schemas import Reason
 
 OBSERVATION_POSE = [90, 130, 0, 0, 90]
 FIXED_TARGET_ROI = (160, 280, 460, 479)  # Measured observation: 640x480, one block.
@@ -10,9 +12,10 @@ DROP_COLORS = {"recyclable": "blue", "hazardous": "red", "kitchen": "green", "ot
 
 
 class TargetRejected(ValueError):
-    def __init__(self, message, observations=None):
+    def __init__(self, message, observations=None, reason=Reason.TARGET_REJECTED):
         super().__init__(message)
         self.observations = list(observations or [])
+        self.reason = reason
 
 
 def _check_location(item):
@@ -25,20 +28,32 @@ def _check_location(item):
         raise TargetRejected("Unknown model category")
 
 
-def select_target(detector, samples=5, min_confidence=0.70):
+def select_target(detector, samples=5, min_confidence=0.70, timeout_sec=2.0,
+                  clock=time.monotonic, sleep=time.sleep, location_check=_check_location):
     if samples < 3:
         raise ValueError("At least three observations are required")
     if not 0 <= min_confidence <= 1:
         raise ValueError("Confidence must be between zero and one")
     accepted = []
     observations = []
-    for _ in range(samples):
+    if not isfinite(timeout_sec) or timeout_sec <= 0:
+        raise ValueError('timeout_sec must be finite and positive')
+    deadline = clock() + timeout_sec
+    while len(observations) < samples or not any(observations):
+        if clock() >= deadline:
+            reason = Reason.TIMEOUT_NO_TARGET if not any(observations) else Reason.TARGET_REJECTED
+            raise TargetRejected('等待目标超时，回到待机；未执行抓取', observations, reason)
         item = detector.detect()
         observations.append(None if item is None else dict(item.__dict__))
+        if clock() >= deadline:
+            reason = Reason.TIMEOUT_NO_TARGET if not any(observations) else Reason.TARGET_REJECTED
+            raise TargetRejected('识别观察窗口已超时，未执行抓取', observations, reason)
         if item is None or item.conf < min_confidence:
+            if len(observations) >= samples and not any(observations):
+                sleep(min(.05, max(0, deadline-clock())))
             continue
         try:
-            _check_location(item)
+            location_check(item)
         except TargetRejected as exc:
             exc.observations = list(observations)
             raise

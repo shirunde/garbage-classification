@@ -55,7 +55,7 @@ class DashboardTest(unittest.TestCase):
         store.publish(sample_event())
         store.show_pending("hazardous")
         snapshot = store.snapshot()
-        self.assertEqual(snapshot["summary"], {"total": 1, "success": 1, "failed": 0})
+        self.assertEqual(snapshot["summary"], {"total": 1, "success": 1, "failed": 0, "unverified": 0})
         self.assertEqual(snapshot["pending_cls"], "hazardous")
         self.assertEqual(snapshot["by_class"]["other"], 1)
         snapshot["events"][0]["ok"] = False

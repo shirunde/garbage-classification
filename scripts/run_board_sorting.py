@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -37,12 +38,15 @@ class EventLog:
     def __init__(self, path, dashboard_url=None):
         self.path = Path(path)
         self.dashboard_url = dashboard_url.rstrip("/") if dashboard_url else None
+        self.run_id = uuid.uuid4().hex
 
     def show_pending(self, cls):
         return None
 
     def publish(self, event):
-        payload = json.dumps(event.to_dict(), ensure_ascii=False)
+        data = event.to_dict()
+        data['event_id'] = self.run_id + ':' + data['event_id']
+        payload = json.dumps(data, ensure_ascii=False)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as log:
             log.write(payload + "\n")

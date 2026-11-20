@@ -5,8 +5,10 @@ from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import ProxyHandler, build_opener
 
 from dashboard.store import EventStore
+from dashboard.placement_model import MAX_REQUEST_BYTES
 from shared.schemas import CLASS_LABELS, REASON_LABELS, Reason
 
 PAGES = {"/": "总览统计", "/events": "事件流水", "/categories": "类别分布", "/status": "系统状态"}
@@ -48,22 +50,44 @@ def safe_json(payload):
             .replace(">", "\\u003e").replace("&", "\\u0026"))
 
 
-def make_handler(store, data_source=None):
+def make_handler(store, data_source=None, camera_url=None, placement_verifier=None, sort_job=None):
+    open_camera = build_opener(ProxyHandler({})).open
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             path = urlparse(self.path).path
             if path == "/api/events":
                 self._send_json(store.snapshot())
+            elif path == "/api/fixed-sort" and sort_job is not None:
+                self._send_json(sort_job.snapshot())
+            elif path == "/api/camera/frame.jpg" and camera_url:
+                try:
+                    with open_camera(camera_url, timeout=2) as upstream:
+                        jpeg = upstream.read(1024 * 1024)
+                        if upstream.headers.get_content_type() != "image/jpeg" or not jpeg.endswith(b"\xff\xd9"):
+                            raise ValueError("Invalid camera JPEG")
+                except (OSError, ValueError):
+                    self._send_text("相机画面暂不可用", 503)
+                    return
+                self._send(jpeg, "image/jpeg")
             elif path in STATIC_FILES:
                 filename, mime = STATIC_FILES[path]
                 self._send((STATIC_ROOT / filename).read_bytes(), mime)
             elif path in PAGES:
-                self._send_html(render_page(path, store, data_source))
+                self._send_html(render_page(path, store, data_source, camera_enabled=bool(camera_url),
+                                            sort_enabled=sort_job is not None))
             else:
                 self._send_text("页面不存在", 404)
 
         def do_POST(self):
-            if urlparse(self.path).path != "/api/events":
+            path = urlparse(self.path).path
+            if path == "/api/fixed-sort" and sort_job is not None:
+                self._start_fixed_sort()
+                return
+            if path == "/api/placement/verify":
+                self._verify_placement()
+                return
+            if path != "/api/events":
                 self._send_text("不支持的接口", 404)
                 return
             try:
@@ -76,6 +100,58 @@ def make_handler(store, data_source=None):
                 self._send_json({"error": str(exc)}, 400)
                 return
             self._send_json(saved, 201)
+
+        def _start_fixed_sort(self):
+            host = self.headers.get("Host")
+            if (host not in (f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}")
+                    or self.headers.get("Origin") != f"http://{host}"):
+                self._send_json({"error": "请从本机看板启动分拣"}, 403)
+                return
+            if self.headers.get_content_type() != "application/json" or self.headers.get("Content-Length") != "2":
+                self._send_json({"error": "无效的分拣请求"}, 400)
+                return
+            try:
+                self.connection.settimeout(2)
+                valid = self.rfile.read(2) == b"{}"
+            except OSError:
+                valid = False
+            finally:
+                self.connection.settimeout(None)
+            if not valid:
+                self._send_json({"error": "无效的分拣请求"}, 400)
+                return
+            started = sort_job.start()
+            self._send_json(sort_job.snapshot(), 202 if started else 409)
+
+        def _verify_placement(self):
+            if placement_verifier is None:
+                self._send_json({"error": "千问落点核验未启用"}, 503)
+                return
+            if self.headers.get("Host", "").partition(":")[0] not in ("127.0.0.1", "localhost"):
+                self._send_json({"error": "仅接受回环接口请求"}, 403)
+                return
+            if self.headers.get_content_type() != "application/json":
+                self._send_json({"error": "需要 JSON 请求"}, 415)
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= MAX_REQUEST_BYTES:
+                    raise ValueError("落点核验请求大小无效")
+                self.connection.settimeout(4)
+                payload = json.loads(self.rfile.read(length))
+            except (OSError, ValueError) as exc:
+                self._send_json({"error": "无效的落点核验请求"}, 400)
+                return
+            finally:
+                self.connection.settimeout(None)
+            try:
+                status = placement_verifier.verify(payload)
+            except ValueError:
+                self._send_json({"error": "无法解析落点核验请求或模型响应"}, 400)
+            except (OSError, KeyError, IndexError, TypeError):
+                self._send_json({"error": "千问落点核验暂不可用"}, 502)
+            else:
+                self._send_json({"status": status})
 
         def log_message(self, fmt, *args):
             return
@@ -113,8 +189,9 @@ def event_row(event):
     label = escape(str(CLASS_LABELS.get(cls, cls or "无目标")))
     index = list(CLASS_LABELS).index(cls) if cls in CLASS_LABELS else 4
     ok = bool(event["ok"])
-    badge = "success" if ok else ("neutral" if event["reason"] == Reason.TIMEOUT_NO_TARGET else "failure")
-    result = "成功" if ok else ("无目标" if badge == "neutral" else "未成功")
+    unverified = event['reason'] == Reason.COMMAND_COMPLETE
+    badge = "success" if ok else ("neutral" if unverified or event["reason"] == Reason.TIMEOUT_NO_TARGET else "failure")
+    result = '待核验' if unverified else ("成功" if ok else ("无目标" if badge == "neutral" else "未成功"))
     reason = escape(str(REASON_LABELS.get(event["reason"], event["reason"])))
     return (f'<tr><td class="event-id">#{escape(str(event["event_id"]))}</td>'
             f'<td class="time-cell" data-ts="{escape(str(event["ts"]), quote=True)}">时标 {escape(str(event["ts"]))}</td>'
@@ -155,11 +232,12 @@ def pending_content(data):
 
 def metric_cards(data):
     s = data["summary"]
-    rate = round(100 * s["success"] / s["total"]) if s["total"] else None
+    confirmed = s['total'] - s.get('unverified', 0)
+    rate = round(100 * s["success"] / confirmed) if confirmed else None
     cards = (("事件总数", "total", s["total"], "包含无目标及异常事件", "events"),
              ("成功事件", "success", s["success"], "已报告分拣成功的记录", "check"),
              ("未成功事件", "failed", s["failed"], "含跳过、无目标及动作失败", "alert"),
-             ("事件成功率", "rate", str(rate) + "%" if rate is not None else "—", "成功事件 ÷ 全部事件", "chart"))
+             ("事件成功率", "rate", str(rate) + "%" if rate is not None else "—", "待核验动作不计入成功率", "chart"))
     return '<div class="metrics">' + "".join(
         f'<article class="metric"><div class="metric-top"><span>{label}</span><span class="metric-icon">{icon(symbol)}</span></div>'
         f'<div class="metric-value" data-metric="{key}">{value}</div><p>{hint}</p></article>'
@@ -181,7 +259,7 @@ def events_page(data):
     options = "".join(f'<option value="{escape(name)}">{escape(label)}</option>' for name, label in CLASS_LABELS.items())
     reasons = "".join(f'<option value="{escape(name)}">{escape(label)}</option>' for name, label in REASON_LABELS.items())
     filters = (f'<form id="filters" class="filters" role="search"><label>类别<select id="class-filter"><option value="">全部类别</option>{options}<option value="__none">无目标</option></select></label>'
-               '<label>结果<select id="result-filter"><option value="">全部结果</option><option value="success">成功</option><option value="failed">未成功</option></select></label>'
+               '<label>结果<select id="result-filter"><option value="">全部结果</option><option value="success">成功</option><option value="failed">未成功</option><option value="unverified">待核验</option></select></label>'
                f'<label>原因<select id="reason-filter"><option value="">全部原因</option>{reasons}</select></label>'
                '<label>时间范围<select id="time-filter"><option value="">全部时间</option><option value="today">今天</option><option value="24h">最近24小时</option><option value="7d">最近7天</option></select></label>'
                '<label class="search-label">搜索<input id="event-search" type="search" placeholder="编号、类别或原因" autocomplete="off"></label>'
@@ -214,14 +292,14 @@ def status_page(data):
                    '<div><dt>摄像头状态</dt><dd class="muted">暂未提供</dd></div></dl><p class="small-note">接口连接正常仅表示数据可以读取，不代表硬件已连接。</p>')
     rows = "".join(f'<tr><td><span class="reason-icon">{icon("alert", 16)}</span>{escape(label)}</td><td class="code-cell">{escape(reason)}</td>'
                    f'<td class="numeric" data-reason-count="{escape(reason)}">{data["fallback"].get(reason, 0)}</td></tr>'
-                   for reason, label in REASON_LABELS.items() if reason != Reason.OK)
+                   for reason, label in REASON_LABELS.items() if reason not in (Reason.OK, Reason.COMMAND_COMPLETE))
     fallback = '<div class="table-scroll"><table><thead><tr><th>事件原因</th><th>原因码</th><th>累计次数</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
     return ('<div class="status-grid">' + pending + device + '</div>' +
             '<div id="latest-alert" class="info-note">异常计数是历史累计值，当前状态请以设备实际情况为准。</div>' +
             panel("异常与兜底记录", fallback, "用于排查确认超时、抓取失败和通信异常。"))
 
 
-def render_page(path, store, data_source=None):
+def render_page(path, store, data_source=None, camera_enabled=False, sort_enabled=False):
     data = store.snapshot()
     title = PAGES[path]
     nav_icons = ("home", "events", "chart", "status")
@@ -230,6 +308,17 @@ def render_page(path, store, data_source=None):
                   for (href, name), symbol in zip(PAGES.items(), nav_icons))
     renderer = {"/": home_page, "/events": events_page, "/categories": categories_page, "/status": status_page}[path]
     source_label = "模拟演示" if data_source == "mock" else "事件数据"
+    live_panel = ""
+    sort_panel = ""
+    if path == "/" and sort_enabled:
+        sort_panel = panel("固定点分拣",
+                           '<p id="fixed-sort-status" role="status">正在读取分拣状态</p>',
+                           subtitle="将方块放在中央抓取点，手移开后再启动。",
+                           action='<button id="fixed-sort-start" class="button" type="button" disabled>开始固定点分拣</button>')
+    if path == "/" and camera_enabled:
+        live_panel = panel("相机实时画面",
+                           '<div class="camera-view"><img id="camera-frame" alt="机械臂相机画面" hidden></div>',
+                           action='<span id="camera-status" class="connection checking" role="status">正在连接相机</span>')
     bootstrap = safe_json({"data": data, "config": {"classes": CLASS_LABELS, "reasons": REASON_LABELS, "bin_colors": BIN_COLORS, "page": path}})
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -245,13 +334,18 @@ def render_page(path, store, data_source=None):
         '<div id="connection-error" class="error-banner" role="alert" hidden>数据更新失败，当前显示上次收到的记录。正在自动重试。</div>'
         '<div id="pending-banner" class="pending-banner" role="status" aria-live="polite" hidden></div>'
         '<noscript><div class="info-note">JavaScript 未启用，当前为首屏记录；请手动刷新获取新数据。</div></noscript>'
-        + renderer(data) + '<footer class="page-footer"><span>循分 · 智能分拣工作台</span><span>统计基于收到的事件记录</span></footer></main></div></div>'
+        + sort_panel + live_panel + renderer(data) + '<footer class="page-footer"><span>循分 · 智能分拣工作台</span><span>统计基于收到的事件记录</span></footer></main></div></div>'
         f'<script type="application/json" id="initial-data">{bootstrap}</script></body></html>')
 
 
-def serve(host="0.0.0.0", port=8765, store=None, data_source=None):
+def serve(host="0.0.0.0", port=8765, store=None, data_source=None, camera_url=None, placement_verifier=None,
+          sort_job=None):
     if store is None:
         store = EventStore()
-    server = ThreadingHTTPServer((host, port), make_handler(store, data_source))
+    if sort_job is not None and host != "127.0.0.1":
+        raise ValueError("分拣按钮要求只在本机回环监听")
+    server = ThreadingHTTPServer((host, port), make_handler(
+        store, data_source, camera_url, placement_verifier, sort_job,
+    ))
     server.store = store
     return server

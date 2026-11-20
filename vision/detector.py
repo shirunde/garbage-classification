@@ -162,7 +162,12 @@ class AscendDetector:
         return frame
 
     def detect(self):
-        image = self._read_frame()
+        return self.detect_frame(self._read_frame())
+
+    def detect_frame(self, image):
+        return next(iter(self.detect_all(image)), None)
+
+    def detect_all(self, image):
         padded, ratio, pad = _letterbox(image, self.cv2)
         tensor = self.np.ascontiguousarray(
             padded[:, :, ::-1].transpose(2, 0, 1), dtype=self.np.float32
@@ -172,16 +177,11 @@ class AscendDetector:
             outputs[0], ratio, pad, image.shape, self.cv2,
             self.confidence_threshold, self.iou_threshold,
         )
-        if not detections:
-            return None
-        category, confidence, (x0, y0, x1, y1) = detections[0]
-        return DetectResult(
-            cls=category,
-            u=(x0 + x1) / 2.0,
-            v=(y0 + y1) / 2.0,
-            conf=confidence,
-            ts=int(time.time() * 1000),
-        )
+        timestamp = int(time.time() * 1000)
+        return [
+            DetectResult(category, (x0 + x1) / 2.0, (y0 + y1) / 2.0, confidence, timestamp)
+            for category, confidence, (x0, y0, x1, y1) in detections
+        ]
 
     def close(self):
         if self.camera is not None:

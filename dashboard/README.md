@@ -38,7 +38,58 @@
 - `store.py`：事件存储及读取时的一致性快照。
 
 外部字段在 HTML 和初始 JSON 中转义，浏览器动态表格同样转义。
-当前没有视频流、机械臂启动/暂停或人工确认指令接口；页面的暂停按钮仅暂停数据更新。
+页面的暂停按钮仅暂停事件数据更新。
+
+## 真机相机直播
+
+在真机试验目录通过以下 Windows SSH 命令启动板端采集，并把 JPEG 端口转发到本机。保持该 SSH 会话运行。
+
+```powershell
+ssh -T -o ExitOnForwardFailure=yes -L 127.0.0.1:18767:127.0.0.1:8767 root@192.168.137.100 "cd /root/garbage-classification/position_trial && exec /root/miniconda3/envs/ros-arm-env/bin/python -u scripts/run_live_camera.py"
+```
+
+在本机项目根目录启动看板后，首页会显示相机画面。
+
+```powershell
+python scripts/run_dashboard.py --host 127.0.0.1 --port 8765 --event-log records/board-live.jsonl --camera-url http://127.0.0.1:18767/frame.jpg
+```
+
+板端试验目录的固定点和任意位置脚本运行时会优先从直播服务读取相机 0 的新帧。使用其他相机编号时直接打开对应设备。相机采集和转发监听在回环地址。直播断开时页面保留最后一帧并标记画面中断。
+
+使用 `--host 127.0.0.1 --enable-fixed-sort` 启动看板时，首页提供「开始固定点分拣」。按钮通过 SSH 执行一次板端试验目录的固定点流程，启用千问时同时核验落点。只有本机页面能启动，执行中再次点击不会排队。板端试验目录的两个分拣脚本共用同一把动作锁。
+
+## 实际入口事件与离线兜底联调
+
+`run_fixed_sort.sh --execute` 默认将标准事件 POST 到 `http://127.0.0.1:8765/api/events`；
+可用 `--dashboard-url` 更改地址。仅识别模式不产生真实动作事件，也不补发旧事件。
+主板事件生产者先写 `records/events.jsonl` 和 `records/event_outbox.jsonl`；
+网络失败后，下次执行或 `bash scripts/run_fixed_sort.sh --flush-events-only` 会补发。
+`run_dashboard.py` 将收到的事件持久化到其 `--event-log` 指定文件，重启恢复；
+相同编号和内容的事件不重复入账，相同编号不同内容则拒绝。
+生产者日志和看板日志应使用不同文件。单次补发最多20条，剩余可重复执行补发命令。
+不要同时启动多个使用同一补发目录的生产者。
+
+动作完成但没有实物反馈时上报 `command_complete`，页面显示“待核验”，
+不计作成功或失败、不进入成功率分母；CSV 和筛选保持同样口径。
+`target_rejected` 表示识别条件不满足后跳过，`interrupted` 表示操作员中止。
+这些新增原因码需要与需求文档第7章同步登记。
+
+无需主板的演示：
+
+```bash
+python scripts/run_fallback_demo.py
+```
+
+打开 `http://127.0.0.1:8766`，可看到真实HTTP上报链路处理的五类**模拟**事件。
+页面标记为“模拟演示”，不加载 Arm_Lib、相机或昇腾模型。
+
+注意：识别窗口默认2秒，是在每次检测返回后检查的软件截止时间，
+不能打断底层卡死的相机或推理调用，也未证明物理回安全位在2秒内完成。
+低置信度目前保守跳过，真实颜色追踪尚未接入。
+重试只接受适配器明确报告的 `VerifiedGraspFailure`（投放前已确认空夹且可重试）；
+最多两次尝试，仍失败回安全位，之后允许处理新目标。
+现有 BoardArm 尚无这种实物反馈，不能因命令返回或未核验就触发重试。
+通信和未知动作异常立即停止，不发后续回位命令，人工检查后重新启动。
 
 ## 验证
 

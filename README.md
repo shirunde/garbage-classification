@@ -44,6 +44,11 @@ python scripts/run_mock.py --web
 事件写入：`POST /api/events`，字段见下方接口。
 
 看板已支持局部自动更新、事件组合筛选与分页、连接失败提示和响应式布局。
+
+当前固定点入口 `bash scripts/run_fixed_sort.sh --execute` 已接入标准事件上报、
+本地保留与断线补发。仅命令执行完成显示“待核验”，不会自动计为实物成功。
+离线可运行 `python scripts/run_fallback_demo.py`，在8766端口查看模拟兜底流程；
+具体状态、部署方式与硬件未验证项见 `dashboard/README.md` 的联调说明。
 页面与统计口径见 [dashboard/README.md](dashboard/README.md)。
 
 ## 协作方式

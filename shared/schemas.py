@@ -17,10 +17,14 @@ REASON_LABELS = {
     "ok": "分拣成功",
     "low_conf_color_track": "低置信度，颜色追踪仍失败",
     "grasp_fail": "抓取失败",
+    "placement_failed": "视觉核验未在目标格内发现实物",
     "need_confirm_timeout": "表情确认超时，已跳过",
     "timeout_no_target": "超时未发现目标",
     "comm_error": "臂侧通信异常",
     "vision_error": "相机采集或视觉推理异常",
+    "command_complete": "动作命令完成，实际夹取与投放待核验",
+    "target_rejected": "识别不满足执行条件，已跳过",
+    "interrupted": "操作员中止",
 }
 
 
@@ -28,19 +32,27 @@ class Reason:
     OK = "ok"
     LOW_CONF_COLOR_TRACK = "low_conf_color_track"
     GRASP_FAIL = "grasp_fail"
+    PLACEMENT_FAILED = "placement_failed"
     NEED_CONFIRM_TIMEOUT = "need_confirm_timeout"
     TIMEOUT_NO_TARGET = "timeout_no_target"
     COMM_ERROR = "comm_error"
     VISION_ERROR = "vision_error"
+    COMMAND_COMPLETE = "command_complete"
+    TARGET_REJECTED = "target_rejected"
+    INTERRUPTED = "interrupted"
 
     ALL = (
         OK,
         LOW_CONF_COLOR_TRACK,
         GRASP_FAIL,
+        PLACEMENT_FAILED,
         NEED_CONFIRM_TIMEOUT,
         TIMEOUT_NO_TARGET,
         COMM_ERROR,
         VISION_ERROR,
+        COMMAND_COMPLETE,
+        TARGET_REJECTED,
+        INTERRUPTED,
     )
 
 
@@ -77,6 +89,8 @@ class SortEvent:
             raise ValueError(f"未知原因码: {self.reason}")
         if self.bin_id not in (0, 1, 2, 3, 4):
             raise ValueError("bin_id 必须是 0 到 4")
+        if self.reason == Reason.COMMAND_COMPLETE and self.ok:
+            raise ValueError('未核验动作不能作为已确认成功事件')
 
     def to_dict(self):
         return asdict(self)

@@ -40,8 +40,8 @@
   function eventRow(event) {
     const index = classes.indexOf(event.cls);
     const label = config.classes[event.cls] || event.cls || "无目标";
-    const badge = event.ok ? "success" : event.reason === "timeout_no_target" ? "neutral" : "failure";
-    const result = event.ok ? "成功" : badge === "neutral" ? "无目标" : "未成功";
+    const badge = event.ok ? "success" : ["command_complete", "timeout_no_target"].includes(event.reason) ? "neutral" : "failure";
+    const result = event.reason === "command_complete" ? "待核验" : event.ok ? "成功" : badge === "neutral" ? "无目标" : "未成功";
     return '<tr><td class="event-id">#' + escape(event.event_id) + '</td><td class="time-cell">' + escape(formatTime(event.ts)) +
       '</td><td><span class="class-label"><i class="class-dot class-' + (index < 0 ? 4 : index) + '"></i>' + escape(label) +
       '</span></td><td>' + escape(binLabel(event)) + '</td><td><span class="badge ' + badge + '">' +
@@ -64,7 +64,8 @@
     return events.filter((event) => {
       if (cls && (cls === "__none" ? !!event.cls : event.cls !== cls)) return false;
       if (result === "success" && !event.ok) return false;
-      if (result === "failed" && event.ok) return false;
+      if (result === "failed" && (event.ok || event.reason === "command_complete")) return false;
+      if (result === "unverified" && event.reason !== "command_complete") return false;
       if (reason && event.reason !== reason) return false;
       if (range) {
         const time = eventMillis(event.ts);
@@ -122,7 +123,7 @@
     events.forEach((event) => rows.push([
       event.event_id, event.ts, formatTime(event.ts),
       config.classes[event.cls] || event.cls || "无目标", binLabel(event),
-      event.ok ? "成功" : event.reason === "timeout_no_target" ? "无目标" : "未成功",
+      event.reason === "command_complete" ? "待核验" : event.ok ? "成功" : event.reason === "timeout_no_target" ? "无目标" : "未成功",
       event.cost_ms, config.reasons[event.reason] || event.reason,
     ]));
     const content = "\ufeff" + rows.map((row) => row.map(cell).join(",")).join("\r\n");
@@ -171,7 +172,8 @@
 
   function render(next) {
     data = next;
-    const values = { ...data.summary, rate: data.summary.total ? Math.round(100 * data.summary.success / data.summary.total) + "%" : "—" };
+    const confirmed = data.summary.total - (data.summary.unverified || 0);
+    const values = { ...data.summary, rate: confirmed ? Math.round(100 * data.summary.success / confirmed) + "%" : "—" };
     document.querySelectorAll('[data-metric]').forEach((node) => { node.textContent = values[node.dataset.metric]; });
     renderEvents();
     renderCategories();
@@ -301,6 +303,106 @@
     if (stopped) { stopped = false; refresh(); }
   });
   render(data);
+  const sortButton = $('fixed-sort-start');
+  if (sortButton) {
+    const sortStatus = $('fixed-sort-status');
+    let sendingSort = false;
+    let sortTimer;
+
+    function showSort(state) {
+      sortButton.disabled = sendingSort || state.status === "running";
+      sortStatus.textContent = state.message;
+    }
+
+    async function refreshSort() {
+      clearTimeout(sortTimer);
+      if (stopped || sendingSort) return;
+      try {
+        const response = await fetch("/api/fixed-sort", {cache: "no-store", signal: AbortSignal.timeout(3000)});
+        if (!response.ok) throw new Error("Sort status unavailable");
+        showSort(await response.json());
+      } catch (_) {
+        sortButton.disabled = true;
+        sortStatus.textContent = "分拣状态暂不可用";
+      } finally {
+        if (!stopped && !sendingSort) sortTimer = setTimeout(refreshSort, 800);
+      }
+    }
+
+    sortButton.addEventListener("click", async () => {
+      if (sendingSort) return;
+      clearTimeout(sortTimer);
+      sendingSort = true;
+      sortButton.disabled = true;
+      sortStatus.textContent = "正在提交分拣";
+      try {
+        const response = await fetch("/api/fixed-sort", {
+          method: "POST", headers: {"Content-Type": "application/json"}, body: "{}",
+          signal: AbortSignal.timeout(3000),
+        });
+        if (response.ok || response.status === 409) showSort(await response.json());
+      } catch (_) {
+        sortStatus.textContent = "提交状态未知，正在重新查询";
+      } finally {
+        sendingSort = false;
+        refreshSort();
+      }
+    });
+    window.addEventListener("pagehide", () => clearTimeout(sortTimer));
+    window.addEventListener("pageshow", refreshSort);
+    refreshSort();
+  }
+  const cameraFrame = $('camera-frame');
+  if (cameraFrame) {
+    const cameraStatus = $('camera-status');
+    let cameraImageUrl;
+    let cameraTimer;
+    let cameraController;
+    async function refreshCamera() {
+      if (document.hidden || stopped || cameraController) return;
+      const controller = new AbortController();
+      cameraController = controller;
+      const deadline = setTimeout(() => controller.abort(), 2600);
+      let nextImageUrl;
+      let delay = 125;
+      try {
+        const response = await fetch("/api/camera/frame.jpg", {cache: "no-store", signal: controller.signal});
+        if (!response.ok) throw new Error("Camera unavailable");
+        nextImageUrl = URL.createObjectURL(await response.blob());
+        const image = new Image();
+        image.src = nextImageUrl;
+        await image.decode();
+        if (controller.signal.aborted) return;
+        cameraFrame.src = nextImageUrl;
+        cameraFrame.hidden = false;
+        if (cameraImageUrl) URL.revokeObjectURL(cameraImageUrl);
+        cameraImageUrl = nextImageUrl;
+        nextImageUrl = undefined;
+        cameraStatus.textContent = "直播中";
+        cameraStatus.className = "connection online";
+      } catch (_) {
+        delay = 900;
+        cameraStatus.textContent = cameraImageUrl ? "画面中断，显示最后一帧" : "相机暂不可用，正在重连";
+        cameraStatus.className = "connection checking";
+      } finally {
+        if (nextImageUrl) URL.revokeObjectURL(nextImageUrl);
+        clearTimeout(deadline);
+        cameraController = undefined;
+        if (!document.hidden && !stopped) cameraTimer = setTimeout(refreshCamera, delay);
+      }
+    }
+    function stopCamera() {
+      clearTimeout(cameraTimer);
+      cameraController?.abort();
+    }
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) stopCamera();
+      else refreshCamera();
+    });
+    window.addEventListener("pagehide", stopCamera);
+    window.addEventListener("pageshow", refreshCamera);
+    refreshCamera();
+  }
   showPolling();
   refresh();
   setInterval(updateTimestamp, 1000);

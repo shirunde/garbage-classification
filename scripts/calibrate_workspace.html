@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>分拣工作区标定</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f3f5f8; color: #18253a; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 1120px; margin: auto; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 1.8rem; }
+    p { margin: 0 0 16px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; }
+    section, form { padding: 16px; background: white; border: 1px solid #dae1ea; border-radius: 12px; }
+    canvas { display: block; width: 100%; height: auto; margin: 12px 0 0; background: #e9eef5; }
+    canvas.ready { cursor: crosshair; }
+    table { width: 100%; table-layout: fixed; text-align: left; border-collapse: collapse; }
+    th, td { padding: 6px 2px; border-bottom: 1px solid #e9eef5; }
+    table th:first-child { width: 44px; }
+    input, button { font: inherit; }
+    input[type=number] { width: 100%; padding: 5px; border: 1px solid #a8b5c8; border-radius: 5px; }
+    input[type=file] { max-width: 100%; }
+    button { padding: 6px 10px; border: 1px solid #2455a1; border-radius: 6px; color: #19468c; background: white; cursor: pointer; }
+    button[aria-pressed=true], button[type=submit] { background: #19468c; color: white; }
+    .height { display: grid; gap: 4px; margin: 16px 0; }
+    .height input { max-width: 160px; }
+    .hint { color: #52627a; font-size: .92rem; }
+    #status { min-height: 2em; margin: 12px 0 0; }
+    #status.error { color: #a32222; }
+    @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>分拣工作区标定</h1>
+    <p>上传观察姿态拍摄的 640 × 480 原图，沿工作区边缘依次点选四角。为每个点填入机械臂基座坐标系下实测的 X、Y，单位为米。</p>
+    <div class="layout">
+      <section aria-label="工作区图像">
+        <label for="photo">相机原图</label>
+        <input id="photo" type="file" accept="image/*">
+        <canvas id="workspace" width="640" height="480" aria-label="点击照片标记工作区的四个角"></canvas>
+      </section>
+      <form id="calibration">
+        <p class="hint">点击表格中的点号，再点击照片，可以重新定位该点。</p>
+        <table>
+          <thead><tr><th>点</th><th>像素 U, V</th><th>X (m)</th><th>Y (m)</th></tr></thead>
+          <tbody id="points"></tbody>
+        </table>
+        <label class="height" for="height">实测抓取高度 Z (m)
+          <input id="height" type="number" min="0.20" step="any" required>
+        </label>
+        <p class="hint">当前板端逆解接口要求 Z ≥ 0.20 m。请填实测高度。</p>
+        <button type="submit">下载标定 JSON</button>
+        <p id="status" role="status"></p>
+      </form>
+    </div>
+  </main>
+  <script>
+    const canvas = document.querySelector("#workspace");
+    const drawing = canvas.getContext("2d");
+    const photoInput = document.querySelector("#photo");
+    const table = document.querySelector("#points");
+    const status = document.querySelector("#status");
+    const pixels = Array(4).fill(null);
+    const rows = pixels.map((_, index) => {
+      const number = index + 1;
+      const row = table.insertRow();
+      row.innerHTML = `<td><button type="button" aria-label="选择点 ${number}">${number}</button></td>
+        <td>—</td>
+        <td><input type="number" step="any" required aria-label="点 ${number} 的 X"></td>
+        <td><input type="number" step="any" required aria-label="点 ${number} 的 Y"></td>`;
+      row.querySelector("button").addEventListener("click", () => {
+        active = index;
+        render();
+      });
+      return row;
+    });
+
+    let image = null;
+    let active = 0;
+    let photoRequest = 0;
+
+    function showStatus(message, isError = false) {
+      status.textContent = message;
+      status.classList.toggle("error", isError);
+    }
+
+    function render() {
+      drawing.clearRect(0, 0, canvas.width, canvas.height);
+      if (image) drawing.drawImage(image, 0, 0);
+      drawing.lineWidth = 2;
+      drawing.strokeStyle = "#45e2f8";
+      drawing.beginPath();
+      pixels.forEach((point, index) => {
+        if (!point) return;
+        if (index > 0 && pixels[index - 1]) drawing.lineTo(...point);
+        else drawing.moveTo(...point);
+      });
+      if (pixels.every(Boolean)) drawing.closePath();
+      drawing.stroke();
+
+      rows.forEach((row, index) => {
+        row.querySelector("button").setAttribute("aria-pressed", String(index === active));
+        const point = pixels[index];
+        row.cells[1].textContent = point ? point.join(", ") : "—";
+        if (!point) return;
+        const [u, v] = point;
+        drawing.beginPath();
+        drawing.arc(u, v, 10, 0, Math.PI * 2);
+        drawing.fillStyle = index === active ? "#19468c" : "#15263a";
+        drawing.fill();
+        drawing.stroke();
+        drawing.fillStyle = "#fff";
+        drawing.font = "bold 12px system-ui";
+        drawing.textAlign = "center";
+        drawing.textBaseline = "middle";
+        drawing.fillText(String(index + 1), u, v);
+      });
+    }
+
+    photoInput.addEventListener("change", async () => {
+      const file = photoInput.files[0];
+      const request = ++photoRequest;
+      if (!file) return;
+
+      // Clear the old correspondence as soon as a replacement is selected.
+      image = null;
+      canvas.classList.remove("ready");
+      pixels.fill(null);
+      document.querySelector("#calibration").reset();
+      active = 0;
+      render();
+      showStatus("正在读取照片…");
+
+      const url = URL.createObjectURL(file);
+      try {
+        const candidate = new Image();
+        candidate.src = url;
+        await candidate.decode();
+        if (request !== photoRequest) return;
+        if (candidate.naturalWidth !== canvas.width || candidate.naturalHeight !== canvas.height) {
+          showStatus("请上传 640 × 480 的相机原图。", true);
+          return;
+        }
+        image = candidate;
+        canvas.classList.add("ready");
+        render();
+        showStatus("请在原图上点选第 1 个角。");
+      } catch {
+        if (request === photoRequest) showStatus("无法读取这张照片。", true);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    });
+
+    canvas.addEventListener("click", event => {
+      if (!image || active < 0) return;
+      const bounds = canvas.getBoundingClientRect();
+      const u = Math.max(0, Math.min(639, Math.round((event.clientX - bounds.left) * 640 / bounds.width)));
+      const v = Math.max(0, Math.min(479, Math.round((event.clientY - bounds.top) * 480 / bounds.height)));
+      pixels[active] = [u, v];
+      active = pixels.indexOf(null);
+      render();
+      showStatus(active < 0 ? "已选定四个点，请核对对应坐标。" : `请点选第 ${active + 1} 个角。`);
+    });
+
+    function isConvex(points) {
+      const turns = points.map(([ax, ay], index) => {
+        const [bx, by] = points[(index + 1) % points.length];
+        const [cx, cy] = points[(index + 2) % points.length];
+        return (bx - ax) * (cy - by) - (by - ay) * (cx - bx);
+      });
+      return turns.every(turn => Number.isFinite(turn) && turn > 0) ||
+        turns.every(turn => Number.isFinite(turn) && turn < 0);
+    }
+
+    document.querySelector("#calibration").addEventListener("submit", event => {
+      event.preventDefault();
+      if (!image || !pixels.every(Boolean)) {
+        showStatus("请先上传照片并点选四个角。", true);
+        return;
+      }
+      const basePoints = rows.map(row => [...row.querySelectorAll("input")].map(input => input.valueAsNumber));
+      if (!isConvex(pixels) || !isConvex(basePoints)) {
+        showStatus("图像点和实测点都须沿凸四边形的周边依次排列。请检查重叠、共线或顺序错误。", true);
+        return;
+      }
+      const config = {
+        image_points_px: pixels,
+        base_xy_points_m: basePoints,
+        fixed_height_m: document.querySelector("#height").valueAsNumber,
+      };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(config, null, 2) + "\n"], {type: "application/json"}));
+      const download = document.createElement("a");
+      download.href = url;
+      download.download = "calibration.measured.json";
+      download.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showStatus("已导出 calibration.measured.json。");
+    });
+
+    render();
+  </script>
+</body>
+</html>

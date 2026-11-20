@@ -6,3 +6,10 @@ __pycache__/
 datasets/
 .ipynb_checkpoints/
 events.jsonl
+records/fixed_sort_*.json
+records/event_outbox.jsonl
+records/board-live.jsonl
+records/grasp_*.jpg
+records/placement_*.jpg
+records/bin-observation-*/
+records/offline-demo/

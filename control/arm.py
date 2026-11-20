@@ -60,11 +60,13 @@ class BoardArm:
     calibration, only the taught image-center pickup is permitted.
     """
 
-    def __init__(self, device=None, pose_set=None, calibration=None, ik_solver=None):
+    def __init__(self, device=None, pose_set=None, calibration=None, ik_solver=None,
+                 after_lift=None):
         self.arm = device if device is not None else _load_arm_device()
         self.poses = pose_set or default_poses
         self.calibration = calibration
         self.ik_solver = ik_solver
+        self.after_lift = after_lift
         self.attempts = 0
 
     def grasp(self, detect):
@@ -81,6 +83,8 @@ class BoardArm:
             self._move(pick_pose, 1000)
             self._clamp(True)
             self._move(self.poses.TOP, 1000)
+            if self.after_lift is not None:
+                self.after_lift(detect)
             self._move(bin_pose, 1000)
             self._clamp(False)
             self._move_up()
@@ -112,6 +116,54 @@ class BoardArm:
             self._move(self.poses.MOULD, 1100)
         except Exception as exc:
             raise CommError(f"回安全位失败: {exc}") from exc
+
+    def move_bin_camera(self, view):
+        """Reach a taught observation view through the center, with the gripper open."""
+        center = tuple(self.poses.MOULD[:2])
+        supported = {center, *self.poses.BIN_CAMERA_VIEWS.values()}
+        if view not in supported:
+            raise CommError(f"投放相机观察姿态未示教: {view}")
+        expected = [*self.poses.MOULD[2:], self.poses.GRIPPER_OPEN]
+        actual = [self.arm.Arm_serial_servo_read(joint) for joint in range(3, 7)]
+        if any(value is None or abs(value - goal) > 3 for value, goal in zip(actual, expected)):
+            raise CommError(f"机械臂未到张爪观察姿态: {actual}")
+        actual = [self.arm.Arm_serial_servo_read(joint) for joint in (1, 2)]
+        start = next((known for known in supported if all(
+            value is not None and abs(value - goal) <= 3 for value, goal in zip(actual, known)
+        )), None)
+        if start is None:
+            raise CommError(f"底座和肩关节未在已示教的相机观察姿态: {actual}")
+        if start == view:
+            return
+        if start[0] != center[0]:
+            self._move_camera_joint(1, center[0])
+        if start[1] != view[1]:
+            if abs(start[1] - view[1]) > 10:
+                self._move_camera_joint(2, (start[1] + view[1]) // 2)
+            self._move_camera_joint(2, view[1])
+        if view[0] != center[0]:
+            self._move_camera_joint(1, view[0])
+
+    def _move_camera_joint(self, joint, angle):
+        time.sleep(.25)
+        self._servo_write(joint, angle, 1200)
+        time.sleep(1.6)
+        for _ in range(4):
+            position = self.arm.Arm_serial_servo_read(joint)
+            if position is not None and abs(position - angle) <= 2:
+                time.sleep(.25)
+                return
+            time.sleep(.3)
+        raise CommError(f"相机观察姿态未到位，舵机 {joint} 目标 {angle}°，回读 {position}")
+
+    def at_camera_observation(self):
+        expected = [*self.poses.MOULD, self.poses.GRIPPER_OPEN]
+        for _ in range(3):
+            actual = [self.arm.Arm_serial_servo_read(joint) for joint in range(1, 7)]
+            if all(value is not None and abs(value - goal) <= 3 for value, goal in zip(actual, expected)):
+                return True
+            time.sleep(.25)
+        return False
 
     def wave(self):
         """分拣成功后的短互动：底座左右摆一下再回中。"""

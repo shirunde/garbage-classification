@@ -24,3 +24,11 @@ BIN_POSES = {
 # 夹爪舵机 6：张开 / 夹紧（课例数值）
 GRIPPER_OPEN = 60
 GRIPPER_CLOSE = 134
+
+# Live-tested camera views (base, shoulder) with the wrist at 90°.
+BIN_CAMERA_VIEWS = {
+    "recyclable": (50, 110),
+    "hazardous": (105, 130),
+    "kitchen": (128, 110),
+    "other": (75, 130),
+}

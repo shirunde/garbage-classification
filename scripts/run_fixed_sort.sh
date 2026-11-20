@@ -5,4 +5,9 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 export PYTHONPATH="/root/robot_arm_dependency/0.py_install:${ROOT}:${PYTHONPATH:-}"
 set -u
+for arg in "$@"; do
+  if [[ "$arg" == "--execute" ]]; then
+    exec flock -n -E 73 /run/lock/garbage-sort.lock /root/miniconda3/envs/ros-arm-env/bin/python "${ROOT}/scripts/run_fixed_sort.py" "$@"
+  fi
+done
 exec /root/miniconda3/envs/ros-arm-env/bin/python "${ROOT}/scripts/run_fixed_sort.py" "$@"
